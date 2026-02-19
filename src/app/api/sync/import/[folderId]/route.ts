@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma'
  */
 export async function POST(
   request: Request,
-  { params }: { params: { folderId: string } }
+  { params }: { params: Promise<{ folderId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -22,7 +22,7 @@ export async function POST(
       )
     }
 
-    const { folderId } = params
+    const { folderId } = await params
 
     // フォルダ情報を取得
     const folder = await prisma.driveFolder.findUnique({
