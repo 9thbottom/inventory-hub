@@ -4,6 +4,7 @@ import { PDFParser } from './pdf-parser'
 import { DaikichiParser } from './daikichi-parser'
 import { OtakarayaParser } from './otakaraya-parser'
 import { EcoringParser } from './ecoring-parser'
+import { ApreParser } from './apre-parser'
 
 export class ParserFactory {
   /**
@@ -37,6 +38,15 @@ export class ParserFactory {
     }
     
     if (type.includes('pdf') || type === 'application/pdf') {
+      if (supplierName) {
+        const normalizedName = supplierName.toLowerCase()
+        
+        if (normalizedName.includes('apre') || normalizedName.includes('アプレ')) {
+          return new ApreParser()
+        }
+      }
+      
+      // デフォルトのPDFParser
       return new PDFParser()
     }
     

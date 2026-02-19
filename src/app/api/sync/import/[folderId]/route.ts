@@ -62,7 +62,7 @@ export async function POST(
       // Google Drive APIでファイル一覧を取得
       const files = await listFiles(folder.driveFolderId)
       
-      // ファイルを分類（CSVファイルを全て対象に）
+      // ファイルを分類
       const csvFiles = files.filter(f =>
         f.name.toLowerCase().endsWith('.csv')
       )
@@ -70,8 +70,19 @@ export async function POST(
       const pdfFiles = files.filter(f =>
         f.mimeType.includes('pdf')
       )
+      
+      // Apreの場合、「落札明細」PDFを商品データとして処理
+      const productPdfFiles = pdfFiles.filter(f =>
+        f.name.includes('落札明細') &&
+        (supplierName.toLowerCase().includes('apre') || supplierName.includes('アプレ'))
+      )
+      
+      // その他のPDFは参照用
+      const referencePdfFiles = pdfFiles.filter(f =>
+        !productPdfFiles.includes(f)
+      )
 
-      console.log(`処理対象: CSV ${csvFiles.length}件, PDF ${pdfFiles.length}件`)
+      console.log(`処理対象: CSV ${csvFiles.length}件, 商品PDF ${productPdfFiles.length}件, 参照PDF ${referencePdfFiles.length}件`)
 
       // 業者情報を取得（フォルダ名から業者名を抽出）
       const supplierName = folder.auctionName
@@ -160,8 +171,80 @@ export async function POST(
         }
       }
 
-      // PDFファイルは記録のみ（ダウンロード不要）
-      for (const pdfFile of pdfFiles) {
+      // 商品データを含むPDFファイルを処理（Apreの落札明細など）
+      for (const pdfFile of productPdfFiles) {
+        try {
+          console.log(`PDF処理中: ${pdfFile.name}`)
+          
+          // ファイルをダウンロード
+          const buffer = await downloadFile(pdfFile.id)
+          
+          // 業者名に応じた適切なパーサーを取得
+          const parser = ParserFactory.getParser(pdfFile.mimeType, supplier.name)
+          const products = await parser.parse(buffer)
+          
+          console.log(`${products.length}件の商品を抽出`)
+          results.processed += products.length
+
+          // 商品データを保存
+          for (const product of products) {
+            try {
+              // 重複チェック
+              const existing = await prisma.product.findUnique({
+                where: { productId: product.productId },
+              })
+
+              if (existing) {
+                console.log(`スキップ（既存）: ${product.productId}`)
+                results.failed++
+                results.errors.push(`商品ID ${product.productId} は既に登録されています`)
+                continue
+              }
+
+              // 商品を保存
+              await prisma.product.create({
+                data: {
+                  productId: product.productId,
+                  boxNumber: product.boxNumber,
+                  rowNumber: product.rowNumber,
+                  name: product.name,
+                  description: product.description || `${product.brand || ''} ${product.metadata?.accessories || ''}`.trim(),
+                  purchasePrice: product.purchasePrice,
+                  commission: product.commission || 0,
+                  supplierId: supplier.id,
+                  auctionDate: folder.auctionDate,
+                  auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
+                  status: 'in_stock',
+                },
+              })
+
+              results.success++
+            } catch (productError) {
+              console.error(`商品保存エラー: ${product.productId}`, productError)
+              results.failed++
+              results.errors.push(`${product.productId}: ${String(productError)}`)
+            }
+          }
+
+          // PDFファイルの処理完了を記録
+          await prisma.document.create({
+            data: {
+              fileName: pdfFile.name,
+              fileType: 'pdf',
+              driveFileId: pdfFile.id,
+              filePath: `${folder.folderPath}/${pdfFile.name}`,
+              driveFolderId: folder.id,
+              processedAt: new Date(),
+            },
+          })
+        } catch (fileError) {
+          console.error(`PDF処理エラー: ${pdfFile.name}`, fileError)
+          results.errors.push(`${pdfFile.name}: ${String(fileError)}`)
+        }
+      }
+
+      // 参照用PDFファイルは記録のみ
+      for (const pdfFile of referencePdfFiles) {
         try {
           await prisma.document.create({
             data: {
