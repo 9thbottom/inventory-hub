@@ -1,9 +1,10 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
+import { useState } from 'react'
 
 interface Supplier {
   id: string
@@ -17,6 +18,10 @@ interface Supplier {
 
 export default function SuppliersPage() {
   const { data: session, status } = useSession()
+  const queryClient = useQueryClient()
+  const [isAddingSupplier, setIsAddingSupplier] = useState(false)
+  const [newSupplierName, setNewSupplierName] = useState('')
+  const [newSupplierCode, setNewSupplierCode] = useState('')
   
   const { data: suppliers, isLoading } = useQuery({
     queryKey: ['suppliers'],
@@ -26,6 +31,39 @@ export default function SuppliersPage() {
       return res.json()
     },
   })
+
+  const addSupplierMutation = useMutation({
+    mutationFn: async (data: { name: string; code: string }) => {
+      const res = await fetch('/api/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || '業者の追加に失敗しました')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+      setIsAddingSupplier(false)
+      setNewSupplierName('')
+      setNewSupplierCode('')
+    },
+  })
+
+  const handleAddSupplier = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newSupplierName.trim() || !newSupplierCode.trim()) {
+      alert('業者名とコードを入力してください')
+      return
+    }
+    addSupplierMutation.mutate({
+      name: newSupplierName.trim(),
+      code: newSupplierCode.trim().toUpperCase(),
+    })
+  }
 
   if (status === 'loading') {
     return (
@@ -62,6 +100,76 @@ export default function SuppliersPage() {
             <h1 className="text-3xl font-bold text-gray-900">業者管理</h1>
           </div>
           <AuthButton />
+        </div>
+
+        {/* 業者追加フォーム */}
+        <div className="mb-6 bg-white rounded-lg shadow p-6">
+          {!isAddingSupplier ? (
+            <button
+              onClick={() => setIsAddingSupplier(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              + 新規業者追加
+            </button>
+          ) : (
+            <form onSubmit={handleAddSupplier} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                    業者名 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="name"
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    placeholder="例: Ore"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
+                    コード <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="code"
+                    value={newSupplierCode}
+                    onChange={(e) => setNewSupplierCode(e.target.value.toUpperCase())}
+                    placeholder="例: ORE"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={addSupplierMutation.isPending}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                >
+                  {addSupplierMutation.isPending ? '追加中...' : '追加'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingSupplier(false)
+                    setNewSupplierName('')
+                    setNewSupplierCode('')
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  キャンセル
+                </button>
+              </div>
+              {addSupplierMutation.isError && (
+                <div className="text-red-600 text-sm">
+                  エラー: {addSupplierMutation.error.message}
+                </div>
+              )}
+            </form>
+          )}
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-hidden">
