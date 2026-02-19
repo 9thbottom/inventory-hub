@@ -4,6 +4,9 @@ import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 /**
  * RevaAuc（リバオク）専用パーサー
  * PDFから精算書の落札商品一覧を解析
+ *
+ * 注意: pdf-parseライブラリではPDFの表構造が正しく抽出されず、
+ * ロット番号列が取得できません。代わりに請求書番号+Noを商品IDとして使用します。
  */
 export class RevaAucParser extends BaseParser {
   async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
@@ -42,12 +45,22 @@ export class RevaAucParser extends BaseParser {
     const products: ParsedProduct[] = []
     const lines = text.split('\n')
 
+    console.log('=== RevaAuc PDF 解析開始 ===')
+    console.log('総行数:', lines.length)
+
+    // 請求書番号を抽出
+    const invoiceNoMatch = text.match(/(\d{8,}_\d+)請求書No/)
+    const invoiceNo = invoiceNoMatch ? invoiceNoMatch[1] : 'UNKNOWN'
+    console.log('請求書番号:', invoiceNo)
+
     // 「（A）御落札商品一覧」の後から商品データが始まる
     const startIndex = lines.findIndex(line => line.includes('（A）御落札商品一覧'))
     if (startIndex === -1) {
       console.warn('RevaAuc PDF: 開始マーカー「（A）御落札商品一覧」が見つかりません')
       return products
     }
+
+    console.log('開始位置:', startIndex)
 
     let i = startIndex + 1
     const nameLines: string[] = []
@@ -73,17 +86,30 @@ export class RevaAucParser extends BaseParser {
       }
 
       // 価格情報を含む行を検出
-      // パターン1: 行全体が価格情報（例: "¥98,000¥2,94011"）
-      const priceOnlyMatch = line.match(/^¥([\d,]+)¥([\d,]+)(\d+)(\d+)(.*)$/)
-      if (priceOnlyMatch) {
-        const [, price, commission, no, quantity, accessories] = priceOnlyMatch
-
-        if (nameLines.length > 0) {
-          const name = nameLines.join(' ').trim()
+      // 価格情報を含む行を検出
+      // パターン: ¥価格¥手数料NoQuantity付属品
+      // 最後の2-3桁がNo+数量（数量は常に1桁）
+      const priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
+      if (priceMatch) {
+        const [, namePart, price, commission, noAndQty, accessories] = priceMatch
+        
+        // NoAndQtyから数量（最後の1桁）とNo（残り）を分離
+        const quantity = noAndQty.slice(-1)
+        const no = noAndQty.slice(0, -1)
+        
+        // 商品名を構築
+        const fullNameLines = namePart.trim() ? [...nameLines, namePart.trim()] : nameLines
+        const name = fullNameLines.join(' ').trim()
+        
+        if (name) {
           const brand = this.extractBrand(name)
+          
+          // 商品IDは一時的なID（タイムスタンプ+No）を使用
+          // ロット番号はPDFから抽出できないため、後で手動で設定する
+          const productId = `REVAAUC-${Date.now()}-${no}`
 
           products.push({
-            productId: no,
+            productId,
             originalProductId: no,
             name,
             purchasePrice: this.normalizePrice(price),
@@ -92,7 +118,9 @@ export class RevaAucParser extends BaseParser {
             brand,
             metadata: {
               no,
+              invoiceNo,
               accessories: accessories.trim() || undefined,
+              note: 'ロット番号はPDFから抽出できないため、後で手動で設定してください',
             },
           })
 
@@ -103,40 +131,15 @@ export class RevaAucParser extends BaseParser {
         continue
       }
 
-      // パターン2: 商品名と価格情報が同じ行（例: "プラダ　ガレリアバッグ　パープル¥42,000¥1,26041クロ"）
-      const nameWithPriceMatch = line.match(/^(.+?)¥([\d,]+)¥([\d,]+)(\d+)(\d+)(.*)$/)
-      if (nameWithPriceMatch) {
-        const [, namePart, price, commission, no, quantity, accessories] = nameWithPriceMatch
-
-        // 前の行の商品名と結合
-        const fullNameLines = [...nameLines, namePart.trim()]
-        const name = fullNameLines.join(' ').trim()
-        const brand = this.extractBrand(name)
-
-        products.push({
-          productId: no,
-          originalProductId: no,
-          name,
-          purchasePrice: this.normalizePrice(price),
-          quantity: parseInt(quantity) || 1,
-          commission: this.normalizePrice(commission),
-          brand,
-          metadata: {
-            no,
-            accessories: accessories.trim() || undefined,
-          },
-        })
-
-        // 次の商品のためにリセット
-        nameLines.length = 0
-        i++
-        continue
-      }
-
       // 商品名の一部として追加
       nameLines.push(line)
       i++
     }
+
+    console.log(`=== 抽出完了: ${products.length}件 ===`)
+    products.forEach((p, i) => {
+      console.log(`商品${i + 1}: No=${p.originalProductId}, 名前=${p.name.substring(0, 30)}..., 価格=¥${p.purchasePrice}, 手数料=¥${p.commission}`)
+    })
 
     return products
   }
