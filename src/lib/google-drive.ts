@@ -78,7 +78,7 @@ export async function listFiles(folderId: string): Promise<DriveFile[]> {
     mimeType: file.mimeType!,
     createdTime: file.createdTime!,
     modifiedTime: file.modifiedTime!,
-    size: file.size,
+    size: file.size || undefined,
   }))
 }
 

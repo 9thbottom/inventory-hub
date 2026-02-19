@@ -88,8 +88,8 @@ export async function POST(
       })
 
       return NextResponse.json({
-        success: true,
         ...results,
+        success: true,
       })
     } catch (error) {
       console.error('インポート処理エラー:', error)

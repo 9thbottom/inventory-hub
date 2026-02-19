@@ -12,7 +12,7 @@ export class CSVParser extends BaseParser {
       if (encoding.toLowerCase() === 'shift-jis' || encoding.toLowerCase() === 'shift_jis') {
         content = iconv.decode(fileBuffer, 'shift_jis')
       } else {
-        content = fileBuffer.toString(encoding)
+        content = fileBuffer.toString(encoding as BufferEncoding)
       }
 
       // CSVをパース
