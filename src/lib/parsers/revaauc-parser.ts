@@ -45,13 +45,9 @@ export class RevaAucParser extends BaseParser {
     const products: ParsedProduct[] = []
     const lines = text.split('\n')
 
-    console.log('=== RevaAuc PDF 解析開始 ===')
-    console.log('総行数:', lines.length)
-
     // 請求書番号を抽出
     const invoiceNoMatch = text.match(/(\d{8,}_\d+)請求書No/)
     const invoiceNo = invoiceNoMatch ? invoiceNoMatch[1] : 'UNKNOWN'
-    console.log('請求書番号:', invoiceNo)
 
     // 「（A）御落札商品一覧」の後から商品データが始まる
     const startIndex = lines.findIndex(line => line.includes('（A）御落札商品一覧'))
@@ -59,8 +55,6 @@ export class RevaAucParser extends BaseParser {
       console.warn('RevaAuc PDF: 開始マーカー「（A）御落札商品一覧」が見つかりません')
       return products
     }
-
-    console.log('開始位置:', startIndex)
 
     let i = startIndex + 1
     const nameLines: string[] = []
@@ -89,7 +83,7 @@ export class RevaAucParser extends BaseParser {
       // パターン: ¥価格¥手数料NoQuantity付属品
       //
       // パターン1: カンマ付き手数料（4桁以上） + 2-3桁NoAndQty
-      // パターン2: 3桁手数料 + 3桁NoAndQty（商品10, 11のケース）
+      // パターン2: 3桁手数料 + 2-3桁NoAndQty
       
       let priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
       let commission, noAndQty, namePart, price, accessories
@@ -97,13 +91,11 @@ export class RevaAucParser extends BaseParser {
       if (priceMatch && priceMatch[3].includes(',')) {
         // パターン1: カンマ付き手数料
         [, namePart, price, commission, noAndQty, accessories] = priceMatch
-        console.log(`[解析パターン1] 手数料="${commission}", NoAndQty="${noAndQty}"`)
       } else {
-        // パターン2: 3桁手数料 + 3桁NoAndQty
-        priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3})(\d{3})(.*)$/)
+        // パターン2: 3桁手数料 + 2-3桁NoAndQty
+        priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3})(\d{2,3})(.*)$/)
         if (priceMatch) {
           [, namePart, price, commission, noAndQty, accessories] = priceMatch
-          console.log(`[解析パターン2] 手数料="${commission}", NoAndQty="${noAndQty}"`)
         }
       }
       
@@ -114,10 +106,8 @@ export class RevaAucParser extends BaseParser {
         const quantity = noAndQty.slice(-1)
         const no = noAndQty.slice(0, -1)
         
-        console.log(`  → No="${no}", 数量="${quantity}"`)
-        
         // 商品名を構築
-        const fullNameLines = namePart.trim() ? [...nameLines, namePart.trim()] : nameLines
+        const fullNameLines = (namePart && namePart.trim()) ? [...nameLines, namePart.trim()] : nameLines
         const name = fullNameLines.join(' ').trim()
         
         if (name && namePart !== undefined && price !== undefined && accessories !== undefined) {
@@ -153,11 +143,7 @@ export class RevaAucParser extends BaseParser {
       i++
     }
 
-    console.log(`=== 抽出完了: ${products.length}件 ===`)
-    products.forEach((p, i) => {
-      console.log(`商品${i + 1}: No=${p.originalProductId}, 名前=${p.name.substring(0, 30)}..., 価格=¥${p.purchasePrice}, 手数料=¥${p.commission}`)
-    })
-
+    console.log(`${products.length}件の商品を抽出`)
     return products
   }
 

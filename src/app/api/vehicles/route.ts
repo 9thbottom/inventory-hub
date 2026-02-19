@@ -52,19 +52,28 @@ export async function GET(request: Request) {
       prisma.product.count({ where }),
     ])
 
-    // 箱番号と行番号を数値としてソート
+    // 箱番号と行番号、または商品IDを数値としてソート
     const sortedProducts = allProducts.sort((a: any, b: any) => {
-      const boxA = parseInt(a.boxNumber || '0')
-      const boxB = parseInt(b.boxNumber || '0')
-      
-      if (boxA !== boxB) {
-        return boxA - boxB
+      // 箱番号がある場合は箱番号と行番号でソート
+      if (a.boxNumber || b.boxNumber) {
+        const boxA = parseInt(a.boxNumber || '0')
+        const boxB = parseInt(b.boxNumber || '0')
+        
+        if (boxA !== boxB) {
+          return boxA - boxB
+        }
+        
+        const rowA = parseInt(a.rowNumber || '0')
+        const rowB = parseInt(b.rowNumber || '0')
+        
+        return rowA - rowB
       }
       
-      const rowA = parseInt(a.rowNumber || '0')
-      const rowB = parseInt(b.rowNumber || '0')
+      // 箱番号がない場合は商品IDでソート（RevaAucなど）
+      const idA = parseInt(a.productId || '0')
+      const idB = parseInt(b.productId || '0')
       
-      return rowA - rowB
+      return idA - idB
     })
 
     // ページネーション適用
