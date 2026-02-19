@@ -5,6 +5,7 @@ import { DaikichiParser } from './daikichi-parser'
 import { OtakarayaParser } from './otakaraya-parser'
 import { EcoringParser } from './ecoring-parser'
 import { ApreParser } from './apre-parser'
+import { RevaAucParser } from './revaauc-parser'
 
 export class ParserFactory {
   /**
@@ -43,6 +44,10 @@ export class ParserFactory {
         
         if (normalizedName.includes('apre') || normalizedName.includes('アプレ')) {
           return new ApreParser()
+        }
+        
+        if (normalizedName.includes('revaauc') || normalizedName.includes('リバオク') || normalizedName.includes('レバオク')) {
+          return new RevaAucParser()
         }
       }
       
