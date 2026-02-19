@@ -6,6 +6,7 @@ import { OtakarayaParser } from './otakaraya-parser'
 import { EcoringParser } from './ecoring-parser'
 import { ApreParser } from './apre-parser'
 import { RevaAucParser } from './revaauc-parser'
+import { OreParser } from './ore-parser'
 
 export class ParserFactory {
   /**
@@ -48,6 +49,10 @@ export class ParserFactory {
         
         if (normalizedName.includes('revaauc') || normalizedName.includes('リバオク') || normalizedName.includes('レバオク')) {
           return new RevaAucParser()
+        }
+        
+        if (normalizedName.includes('ore') || normalizedName.includes('オーレ')) {
+          return new OreParser()
         }
       }
       
