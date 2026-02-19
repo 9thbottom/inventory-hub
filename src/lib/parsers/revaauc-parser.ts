@@ -94,8 +94,12 @@ export class RevaAucParser extends BaseParser {
         const [, namePart, price, commission, noAndQty, accessories] = priceMatch
         
         // NoAndQtyから数量（最後の1桁）とNo（残り）を分離
+        // 2桁の場合: No(1桁) + 数量(1桁) 例: "11" → No=1, 数量=1
+        // 3桁の場合: No(2桁) + 数量(1桁) 例: "101" → No=10, 数量=1
         const quantity = noAndQty.slice(-1)
         const no = noAndQty.slice(0, -1)
+        
+        console.log(`[解析] NoAndQty="${noAndQty}" → No="${no}", 数量="${quantity}"`)
         
         // 商品名を構築
         const fullNameLines = namePart.trim() ? [...nameLines, namePart.trim()] : nameLines
@@ -104,9 +108,10 @@ export class RevaAucParser extends BaseParser {
         if (name) {
           const brand = this.extractBrand(name)
           
-          // 商品IDは一時的なID（タイムスタンプ+No）を使用
+          // 商品IDは一時的なID（タイムスタンプ+ランダム値+No）を使用
           // ロット番号はPDFから抽出できないため、後で手動で設定する
-          const productId = `REVAAUC-${Date.now()}-${no}`
+          const randomId = Math.random().toString(36).substring(2, 8)
+          const productId = `REVAAUC-${Date.now()}-${randomId}-${no}`
 
           products.push({
             productId,
