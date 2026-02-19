@@ -88,19 +88,18 @@ export class RevaAucParser extends BaseParser {
       // 価格情報を含む行を検出
       // 価格情報を含む行を検出
       // パターン: ¥価格¥手数料NoQuantity付属品
-      // 最後の2-3桁がNo+数量（数量は常に1桁）
-      const priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,4})(.*)$/)
+      // 手数料は3-5桁、その後にNo(1-2桁)+数量(1桁)が続く
+      const priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3,5})(\d{2,3})(.*)$/)
       if (priceMatch) {
         const [, namePart, price, commission, noAndQty, accessories] = priceMatch
         
         // NoAndQtyから数量（最後の1桁）とNo（残り）を分離
         // 2桁の場合: No(1桁) + 数量(1桁) 例: "11" → No=1, 数量=1
         // 3桁の場合: No(2桁) + 数量(1桁) 例: "101" → No=10, 数量=1
-        // 4桁の場合: No(3桁) + 数量(1桁) 例: "1011" → No=101, 数量=1
         const quantity = noAndQty.slice(-1)
         const no = noAndQty.slice(0, -1)
         
-        console.log(`[解析] NoAndQty="${noAndQty}" → No="${no}", 数量="${quantity}"`)
+        console.log(`[解析] 手数料="${commission}", NoAndQty="${noAndQty}" → No="${no}", 数量="${quantity}"`)
         
         // 商品名を構築
         const fullNameLines = namePart.trim() ? [...nameLines, namePart.trim()] : nameLines
