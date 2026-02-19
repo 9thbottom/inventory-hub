@@ -18,23 +18,33 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  session: {
+    strategy: 'jwt',
+  },
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account, user }) {
       if (account) {
         token.accessToken = account.access_token
         token.refreshToken = account.refresh_token
+      }
+      if (user) {
+        token.id = user.id
       }
       return token
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string
       session.refreshToken = token.refreshToken as string
+      if (session.user) {
+        session.user.id = token.id as string
+      }
       return session
     },
   },
   pages: {
     signIn: '/auth/signin',
   },
+  secret: process.env.NEXTAUTH_SECRET,
 }
 
 const handler = NextAuth(authOptions)
