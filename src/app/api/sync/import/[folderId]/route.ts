@@ -88,7 +88,12 @@ export async function POST(
         if ((supplier.includes('revaauc') || supplier.includes('リバオク') || supplier.includes('レバオク')) && f.name.includes('精算書')) {
           return true
         }
-        
+
+        // Ore: Slip（御精算書）PDF
+        if ((supplier.includes('ore') || supplier.includes('オーレ')) && f.name.includes('Slip')) {
+          return true
+        }
+
         return false
       })
       
