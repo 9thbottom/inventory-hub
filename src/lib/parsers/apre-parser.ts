@@ -50,6 +50,7 @@ export class ApreParser extends BaseParser {
     }
 
     let i = startIndex + 1
+    let previousNo = 0 // 前の商品のNo
 
     while (i < lines.length) {
       const line = lines[i].trim()
@@ -66,8 +67,8 @@ export class ApreParser extends BaseParser {
 
           // 箱番号が3桁の数字であることを確認
           if (/^\d{3}$/.test(boxNumber) && /^\d+$/.test(rowNumber)) {
-            // No+金額を分離
-            const { no, price } = this.parseNoAndPrice(noAndPrice)
+            // No+金額を分離（前のNoを渡す）
+            const { no, price } = this.parseNoAndPrice(noAndPrice, previousNo)
 
             if (no && price) {
               // 品名を取得（次の行から、次の手数料行まで）
@@ -95,6 +96,9 @@ export class ApreParser extends BaseParser {
                     rowNumber,
                   },
                 })
+
+                // 次の商品のために現在のNoを記憶
+                previousNo = parseInt(no)
               }
 
               i = nextIndex
@@ -111,38 +115,98 @@ export class ApreParser extends BaseParser {
   }
 
   /**
-   * No+金額の文字列を分離
-   * 例: "1121,000" -> { no: "1", price: "21,000" }
+   * 数量+No+金額の文字列を分離
+   * PDFのテキスト抽出では、数量(1桁) + No(1-2桁) + 金額(カンマ区切り)の形式で結合されている
+   * 例: "125,000" -> 数量(1) + No(2) + 金額(5,000)
+   * 例: "157,000" -> 数量(1) + No(5) + 金額(7,000)
+   * 例: "1129,000" -> 数量(1) + No(12) + 金額(9,000)
+   *
+   * @param noAndPrice 数量+No+金額の文字列
+   * @param previousNo 前の商品のNo（連番判定に使用）
    */
-  private parseNoAndPrice(noAndPrice: string): { no: string; price: string } {
-    // パターン1: 1-2桁のNo + カンマ区切りの金額
-    // 例: "1121,000" -> No=1, 金額=121,000 または No=11, 金額=21,000
+  private parseNoAndPrice(noAndPrice: string, previousNo: number = 0): { no: string; price: string } {
+    // カンマの位置を見つける
+    const commaIndex = noAndPrice.indexOf(',')
     
-    // 最初の1桁または2桁をNoとして試す
-    // 金額は通常3桁ごとにカンマが入るため、残りの部分が妥当な金額形式かチェック
-    
-    // 1桁のNoを試す
-    if (noAndPrice.length > 1) {
-      const no1 = noAndPrice.substring(0, 1)
-      const price1 = noAndPrice.substring(1)
-      
-      // 金額が妥当な形式か（数字とカンマのみ、適切な桁数）
-      if (/^\d{1,3}(?:,\d{3})*$/.test(price1)) {
-        return { no: no1, price: price1 }
-      }
+    if (commaIndex === -1) {
+      // カンマがない場合は全体を金額として扱う
+      return { no: '0', price: noAndPrice }
     }
     
-    // 2桁のNoを試す
-    if (noAndPrice.length > 2) {
-      const no2 = noAndPrice.substring(0, 2)
-      const price2 = noAndPrice.substring(2)
-      
-      if (/^\d{1,3}(?:,\d{3})*$/.test(price2)) {
-        return { no: no2, price: price2 }
-      }
+    const beforeComma = noAndPrice.substring(0, commaIndex)
+    const afterComma = noAndPrice.substring(commaIndex + 1)
+    
+    // カンマの後は必ず3桁
+    if (afterComma.length !== 3 || !/^\d{3}$/.test(afterComma)) {
+      // 不正な形式
+      return { no: '0', price: noAndPrice }
     }
-
-    // どちらも該当しない場合、全体を金額として扱う
+    
+    // パターン: 数量(1桁) + No(1-2桁) + 金額
+    // カンマの前の桁数に応じて分離
+    if (beforeComma.length === 3) {
+      // 3桁の場合: 数量(1) + No(1) + 金額の最初の1桁
+      // 例: "125,000" -> 数量(1) + No(2) + 金額(5,000)
+      const quantity = beforeComma.substring(0, 1)  // 常に1
+      const no = beforeComma.substring(1, 2)
+      const priceFirst = beforeComma.substring(2)
+      const price = `${priceFirst},${afterComma}`
+      return { no, price }
+    } else if (beforeComma.length === 4) {
+      // 4桁の場合: 2つのパターンがある
+      // パターンA: 数量(1) + No(1桁) + 金額2桁 → 金額は XX,XXX形式
+      // パターンB: 数量(1) + No(2桁) + 金額1桁 → 金額は X,XXX形式
+      
+      // 両方のパターンを試す
+      const noA = parseInt(beforeComma.substring(1, 2))
+      const noB = parseInt(beforeComma.substring(1, 3))
+      
+      // 前のNoから次のNoを推測
+      const expectedNo = previousNo + 1
+      
+      // どちらのパターンが期待値に近いか判定
+      const diffA = Math.abs(noA - expectedNo)
+      const diffB = Math.abs(noB - expectedNo)
+      
+      if (diffB < diffA) {
+        // パターンB: No=2桁, 金額=1桁
+        // 例: "1129,000" -> No=12, 金額=9,000
+        const quantity = beforeComma.substring(0, 1)
+        const no = beforeComma.substring(1, 3)
+        const priceFirst = beforeComma.substring(3)
+        const price = `${priceFirst},${afterComma}`
+        return { no, price }
+      } else {
+        // パターンA: No=1桁, 金額=2桁
+        // 例: "1229,000" -> No=2, 金額=29,000
+        const quantity = beforeComma.substring(0, 1)
+        const no = beforeComma.substring(1, 2)
+        const priceFirst = beforeComma.substring(2)
+        const price = `${priceFirst},${afterComma}`
+        return { no, price }
+      }
+    } else if (beforeComma.length === 5) {
+      // 5桁の場合: 数量(1) + No(2) + 金額の最初の2桁
+      // 例: "11225,500" -> 数量(1) + No(12) + 金額(25,500)
+      const quantity = beforeComma.substring(0, 1)  // 常に1
+      const no = beforeComma.substring(1, 3)
+      const priceFirst = beforeComma.substring(3)
+      const price = `${priceFirst},${afterComma}`
+      return { no, price }
+    } else if (beforeComma.length === 6) {
+      // 6桁の場合: 数量(1) + No(2) + 金額の最初の3桁
+      // 例: "122100,000" -> 数量(1) + No(22) + 金額(100,000)
+      const quantity = beforeComma.substring(0, 1)  // 常に1
+      const no = beforeComma.substring(1, 3)
+      const priceFirst = beforeComma.substring(3)
+      const price = `${priceFirst},${afterComma}`
+      return { no, price }
+    } else if (beforeComma.length <= 2) {
+      // 1-2桁の場合: Noはなく、全体が金額
+      return { no: '0', price: noAndPrice }
+    }
+    
+    // その他の場合は全体を金額として扱う
     return { no: '0', price: noAndPrice }
   }
 

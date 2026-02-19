@@ -146,12 +146,13 @@ export default function ProductsPage() {
               .sort(([a], [b]) => b.localeCompare(a)) // 新しい順にソート
               .map(([folderName, products]) => {
                 const isExpanded = expandedFolders.has(folderName)
-                const totalPrice = products.reduce((sum, p) => {
+                // PDFの計算方法に合わせる: 全商品の小計を合計してから消費税を計算
+                const subtotalSum = products.reduce((sum, p) => {
                   const purchasePrice = Number(p.purchasePrice)
                   const commission = Number(p.commission || 0)
-                  const subtotal = purchasePrice + commission
-                  return sum + Math.floor(subtotal * 1.1)
+                  return sum + purchasePrice + commission
                 }, 0)
+                const totalPrice = subtotalSum + Math.floor(subtotalSum * 0.1)
 
                 return (
                   <div key={folderName} className="bg-white rounded-lg shadow overflow-hidden">

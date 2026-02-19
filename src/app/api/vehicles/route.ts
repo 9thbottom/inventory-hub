@@ -41,18 +41,35 @@ export async function GET(request: Request) {
       ]
     }
 
-    const [products, total] = await Promise.all([
+    const [allProducts, total] = await Promise.all([
       prisma.product.findMany({
         where,
         include: {
           supplier: true,
         },
-        orderBy: { productId: 'asc' }, // 商品ID順（元のCSVと合わせる）
-        skip: (page - 1) * limit,
-        take: limit,
+        // ページネーション前に全件取得してソート
       }),
       prisma.product.count({ where }),
     ])
+
+    // 箱番号と行番号を数値としてソート
+    const sortedProducts = allProducts.sort((a: any, b: any) => {
+      const boxA = parseInt(a.boxNumber || '0')
+      const boxB = parseInt(b.boxNumber || '0')
+      
+      if (boxA !== boxB) {
+        return boxA - boxB
+      }
+      
+      const rowA = parseInt(a.rowNumber || '0')
+      const rowB = parseInt(b.rowNumber || '0')
+      
+      return rowA - rowB
+    })
+
+    // ページネーション適用
+    const startIndex = (page - 1) * limit
+    const products = sortedProducts.slice(startIndex, startIndex + limit)
 
     return NextResponse.json({
       products,

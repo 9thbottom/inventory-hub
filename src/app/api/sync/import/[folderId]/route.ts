@@ -124,28 +124,40 @@ export async function POST(
               })
 
               if (existing) {
-                console.log(`スキップ（既存）: ${product.productId}`)
-                results.failed++
-                results.errors.push(`商品ID ${product.productId} は既に登録されています`)
-                continue
+                // 既存の商品を更新
+                console.log(`更新: ${product.productId}`)
+                await prisma.product.update({
+                  where: { productId: product.productId },
+                  data: {
+                    boxNumber: product.boxNumber,
+                    rowNumber: product.rowNumber,
+                    name: product.name,
+                    description: product.description || `${product.brand || ''} ${product.genre || ''}`.trim(),
+                    purchasePrice: product.purchasePrice,
+                    commission: product.commission || 0,
+                    auctionDate: folder.auctionDate,
+                    auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
+                  },
+                })
+              } else {
+                // 新規商品を作成
+                console.log(`新規作成: ${product.productId}`)
+                await prisma.product.create({
+                  data: {
+                    productId: product.productId, // B024-7 の形式
+                    boxNumber: product.boxNumber,
+                    rowNumber: product.rowNumber,
+                    name: product.name,
+                    description: product.description || `${product.brand || ''} ${product.genre || ''}`.trim(),
+                    purchasePrice: product.purchasePrice,
+                    commission: product.commission || 0,
+                    supplierId: supplier.id,
+                    auctionDate: folder.auctionDate,
+                    auctionName: folder.folderPath.split('/').pop() || folder.auctionName, // フォルダ名全体 (0111_Daikichi)
+                    status: 'in_stock',
+                  },
+                })
               }
-
-              // 商品を保存
-              await prisma.product.create({
-                data: {
-                  productId: product.productId, // B024-7 の形式
-                  boxNumber: product.boxNumber,
-                  rowNumber: product.rowNumber,
-                  name: product.name,
-                  description: product.description || `${product.brand || ''} ${product.genre || ''}`.trim(),
-                  purchasePrice: product.purchasePrice,
-                  commission: product.commission || 0,
-                  supplierId: supplier.id,
-                  auctionDate: folder.auctionDate,
-                  auctionName: folder.folderPath.split('/').pop() || folder.auctionName, // フォルダ名全体 (0111_Daikichi)
-                  status: 'in_stock',
-                },
-              })
 
               results.success++
             } catch (productError) {
@@ -155,14 +167,18 @@ export async function POST(
             }
           }
 
-          // CSVファイルの処理完了を記録
-          await prisma.document.create({
-            data: {
+          // CSVファイルの処理完了を記録（既存の場合は更新）
+          await prisma.document.upsert({
+            where: { driveFileId: csvFile.id },
+            create: {
               fileName: csvFile.name,
               fileType: 'csv',
               driveFileId: csvFile.id,
               filePath: `${folder.folderPath}/${csvFile.name}`,
               driveFolderId: folder.id,
+              processedAt: new Date(),
+            },
+            update: {
               processedAt: new Date(),
             },
           })
@@ -196,28 +212,40 @@ export async function POST(
               })
 
               if (existing) {
-                console.log(`スキップ（既存）: ${product.productId}`)
-                results.failed++
-                results.errors.push(`商品ID ${product.productId} は既に登録されています`)
-                continue
+                // 既存の商品を更新
+                console.log(`更新: ${product.productId}`)
+                await prisma.product.update({
+                  where: { productId: product.productId },
+                  data: {
+                    boxNumber: product.boxNumber,
+                    rowNumber: product.rowNumber,
+                    name: product.name,
+                    description: product.description || `${product.brand || ''} ${product.metadata?.accessories || ''}`.trim(),
+                    purchasePrice: product.purchasePrice,
+                    commission: product.commission || 0,
+                    auctionDate: folder.auctionDate,
+                    auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
+                  },
+                })
+              } else {
+                // 新規商品を作成
+                console.log(`新規作成: ${product.productId}`)
+                await prisma.product.create({
+                  data: {
+                    productId: product.productId,
+                    boxNumber: product.boxNumber,
+                    rowNumber: product.rowNumber,
+                    name: product.name,
+                    description: product.description || `${product.brand || ''} ${product.metadata?.accessories || ''}`.trim(),
+                    purchasePrice: product.purchasePrice,
+                    commission: product.commission || 0,
+                    supplierId: supplier.id,
+                    auctionDate: folder.auctionDate,
+                    auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
+                    status: 'in_stock',
+                  },
+                })
               }
-
-              // 商品を保存
-              await prisma.product.create({
-                data: {
-                  productId: product.productId,
-                  boxNumber: product.boxNumber,
-                  rowNumber: product.rowNumber,
-                  name: product.name,
-                  description: product.description || `${product.brand || ''} ${product.metadata?.accessories || ''}`.trim(),
-                  purchasePrice: product.purchasePrice,
-                  commission: product.commission || 0,
-                  supplierId: supplier.id,
-                  auctionDate: folder.auctionDate,
-                  auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
-                  status: 'in_stock',
-                },
-              })
 
               results.success++
             } catch (productError) {
@@ -227,14 +255,18 @@ export async function POST(
             }
           }
 
-          // PDFファイルの処理完了を記録
-          await prisma.document.create({
-            data: {
+          // PDFファイルの処理完了を記録（既存の場合は更新）
+          await prisma.document.upsert({
+            where: { driveFileId: pdfFile.id },
+            create: {
               fileName: pdfFile.name,
               fileType: 'pdf',
               driveFileId: pdfFile.id,
               filePath: `${folder.folderPath}/${pdfFile.name}`,
               driveFolderId: folder.id,
+              processedAt: new Date(),
+            },
+            update: {
               processedAt: new Date(),
             },
           })
@@ -244,17 +276,21 @@ export async function POST(
         }
       }
 
-      // 参照用PDFファイルは記録のみ
+      // 参照用PDFファイルは記録のみ（既存の場合はスキップ）
       for (const pdfFile of referencePdfFiles) {
         try {
-          await prisma.document.create({
-            data: {
+          await prisma.document.upsert({
+            where: { driveFileId: pdfFile.id },
+            create: {
               fileName: pdfFile.name,
               fileType: 'pdf',
               driveFileId: pdfFile.id,
               filePath: `${folder.folderPath}/${pdfFile.name}`,
               driveFolderId: folder.id,
               // processedAt: null（参照用として保存のみ）
+            },
+            update: {
+              // 参照用PDFは更新しない
             },
           })
         } catch (pdfError) {
