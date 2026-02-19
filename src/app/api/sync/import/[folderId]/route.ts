@@ -62,6 +62,9 @@ export async function POST(
       // Google Drive APIでファイル一覧を取得
       const files = await listFiles(folder.driveFolderId)
       
+      // 業者情報を取得（フォルダ名から業者名を抽出）
+      const supplierName = folder.auctionName
+      
       // ファイルを分類
       const csvFiles = files.filter(f =>
         f.name.toLowerCase().endsWith('.csv')
@@ -84,8 +87,6 @@ export async function POST(
 
       console.log(`処理対象: CSV ${csvFiles.length}件, 商品PDF ${productPdfFiles.length}件, 参照PDF ${referencePdfFiles.length}件`)
 
-      // 業者情報を取得（フォルダ名から業者名を抽出）
-      const supplierName = folder.auctionName
       const supplier = await prisma.supplier.findFirst({
         where: {
           OR: [

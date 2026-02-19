@@ -8,12 +8,25 @@ import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 export class ApreParser extends BaseParser {
   async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
     try {
+      // バッファの検証
+      if (!fileBuffer || fileBuffer.length === 0) {
+        throw new Error('PDFファイルが空です')
+      }
+
       // PDFからテキストを抽出
       const data = await pdf(fileBuffer)
       const text = data.text
 
+      if (!text || text.trim().length === 0) {
+        throw new Error('PDFからテキストを抽出できませんでした')
+      }
+
       // 商品データを抽出
       const products = this.extractProducts(text)
+
+      if (products.length === 0) {
+        console.warn('Apre PDF: 商品データが見つかりませんでした')
+      }
 
       return products
     } catch (error) {
@@ -32,7 +45,7 @@ export class ApreParser extends BaseParser {
     // 「株式会社アプレ」の後から商品データが始まる
     const startIndex = lines.findIndex(line => line.includes('株式会社アプレ'))
     if (startIndex === -1) {
-      console.warn('Apre PDF: 開始位置が見つかりません')
+      console.warn('Apre PDF: 開始マーカー「株式会社アプレ」が見つかりません。PDFフォーマットが異なる可能性があります。')
       return products
     }
 
