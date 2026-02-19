@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         include: {
           supplier: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { productId: 'asc' }, // 商品ID順（元のCSVと合わせる）
         skip: (page - 1) * limit,
         take: limit,
       }),

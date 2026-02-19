@@ -119,24 +119,19 @@ export async function POST(
                 continue
               }
 
-              // 商品IDから箱番号と行番号を抽出（例: B024-7 -> 箱番号: B024, 行番号: 7）
-              const [boxNumber, rowNumber] = product.productId.includes('-')
-                ? product.productId.split('-')
-                : [null, null]
-
               // 商品を保存
               await prisma.product.create({
                 data: {
-                  productId: product.productId,
-                  boxNumber: boxNumber,
-                  rowNumber: rowNumber,
+                  productId: product.productId, // B024-7 の形式
+                  boxNumber: product.boxNumber,
+                  rowNumber: product.rowNumber,
                   name: product.name,
                   description: product.description || `${product.brand || ''} ${product.genre || ''}`.trim(),
                   purchasePrice: product.purchasePrice,
                   commission: product.commission || 0,
                   supplierId: supplier.id,
                   auctionDate: folder.auctionDate,
-                  auctionName: folder.auctionName,
+                  auctionName: folder.folderPath.split('/').pop() || folder.auctionName, // フォルダ名全体 (0111_Daikichi)
                   status: 'in_stock',
                 },
               })

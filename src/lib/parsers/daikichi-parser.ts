@@ -12,30 +12,33 @@ export class DaikichiParser extends CSVParser {
       type: 'csv',
       encoding: 'shift-jis',
       mapping: {
-        productId: '商品番号',
+        boxNumber: '箱番号',
+        rowNumber: '行番号',
+        originalProductId: '商品番号',
         name: '商品名',
         purchasePrice: '商品単価（税別）',
+        commission: '買い手数料（税別）',
         brand: 'ブランド',
         rank: 'ランク',
         genre: 'ジャンル',
         quantity: '数量',
-        commission: '買い手数料（税別）',
       },
       ...config,
     }
 
     const products = await super.parse(fileBuffer, daikichiConfig)
 
-    // 大吉固有の後処理
+    // 大吉固有の後処理: 商品IDを箱番号-行番号の形式に変換
     return products.map(product => ({
       ...product,
+      productId: `${product.boxNumber}-${product.rowNumber}`, // B024-7 の形式
       // 追加情報を含める
       metadata: {
+        originalProductId: product.originalProductId,
         brand: product.brand,
         rank: product.rank,
         genre: product.genre,
         quantity: product.quantity,
-        commission: product.commission,
       },
     }))
   }

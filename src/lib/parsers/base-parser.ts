@@ -7,6 +7,9 @@ export interface ParserConfig {
 
 export interface ParsedProduct {
   productId: string
+  boxNumber?: string
+  rowNumber?: string
+  originalProductId?: string
   name: string
   description?: string
   purchasePrice: number
