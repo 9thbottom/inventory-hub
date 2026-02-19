@@ -31,15 +31,25 @@ export class CSVParser extends BaseParser {
         try {
           const product: ParsedProduct = {
             productId: this.getMappedValue(record, mapping, 'productId') || '',
+            boxNumber: this.getMappedValue(record, mapping, 'boxNumber'),
+            rowNumber: this.getMappedValue(record, mapping, 'rowNumber'),
+            originalProductId: this.getMappedValue(record, mapping, 'originalProductId'),
             name: this.getMappedValue(record, mapping, 'name') || '',
             description: this.getMappedValue(record, mapping, 'description'),
             purchasePrice: this.normalizePrice(
               this.getMappedValue(record, mapping, 'purchasePrice') || 0
             ),
+            commission: this.normalizePrice(
+              this.getMappedValue(record, mapping, 'commission') || 0
+            ),
+            brand: this.getMappedValue(record, mapping, 'brand'),
+            rank: this.getMappedValue(record, mapping, 'rank'),
+            genre: this.getMappedValue(record, mapping, 'genre'),
+            quantity: this.getMappedValue(record, mapping, 'quantity'),
           }
 
-          // 必須項目のチェック
-          if (product.productId && product.name) {
+          // 必須項目のチェック（nameは必須、productIdは後で生成される場合もある）
+          if (product.name) {
             products.push(product)
           }
         } catch (error) {
