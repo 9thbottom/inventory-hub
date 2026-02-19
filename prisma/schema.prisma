@@ -12,15 +12,18 @@ datasource db {
 
 model Product {
   id              String      @id @default(cuid())
-  productId       String      @unique // 商品ID
+  productId       String      @unique // 商品ID（例: B024-7）
+  boxNumber       String?     // 箱番号（例: B024）
+  rowNumber       String?     // 行番号（例: 7）
   supplier        Supplier    @relation(fields: [supplierId], references: [id])
   supplierId      String      // 仕入れ元
   name            String      // 商品名
   description     String?     // 商品説明
-  purchasePrice   Decimal     // 仕入れ価格
+  purchasePrice   Decimal     // 商品単価（税別）
+  commission      Decimal?    // 買い手数料（税別）
   status          String      @default("in_stock") // ステータス (in_stock, sold, reserved)
   auctionDate     DateTime?   // オークション日
-  auctionName     String?     // オークション名
+  auctionName     String?     // オークション名（フォルダ名: 0111_Daikichi）
   documents       Document[]
   importedAt      DateTime    @default(now())
   createdAt       DateTime    @default(now())
@@ -44,8 +47,8 @@ model Supplier {
 
 model Document {
   id              String      @id @default(cuid())
-  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productId       String
+  product         Product?    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId       String?     // 商品に紐付かないファイル（請求書等）はnull
   driveFolder     DriveFolder @relation(fields: [driveFolderId], references: [id])
   driveFolderId   String
   fileName        String      // ファイル名

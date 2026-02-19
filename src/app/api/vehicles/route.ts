@@ -36,9 +36,8 @@ export async function GET(request: Request) {
 
     if (search) {
       where.OR = [
-        { vehicleId: { contains: search, mode: 'insensitive' } },
+        { productId: { contains: search, mode: 'insensitive' } },
         { name: { contains: search, mode: 'insensitive' } },
-        { chassisNumber: { contains: search, mode: 'insensitive' } },
       ]
     }
 
