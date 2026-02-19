@@ -10,6 +10,12 @@ export interface ParsedProduct {
   name: string
   description?: string
   purchasePrice: number
+  brand?: string
+  rank?: string
+  genre?: string
+  quantity?: number
+  commission?: number
+  metadata?: Record<string, any>
   [key: string]: any
 }
 
