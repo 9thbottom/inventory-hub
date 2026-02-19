@@ -9,16 +9,18 @@ export async function getDriveClient() {
     throw new Error('認証が必要です')
   }
 
+  if (!session.accessToken) {
+    throw new Error('アクセストークンが見つかりません。再度ログインしてください。')
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET
   )
 
-  // セッションからアクセストークンを取得
-  // 注: 実際の実装では、Accountテーブルからトークンを取得する必要があります
   oauth2Client.setCredentials({
-    access_token: session.accessToken as string,
-    refresh_token: session.refreshToken as string,
+    access_token: session.accessToken,
+    refresh_token: session.refreshToken,
   })
 
   return google.drive({ version: 'v3', auth: oauth2Client })
