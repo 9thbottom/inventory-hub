@@ -75,7 +75,7 @@ export async function POST(
           itemsSuccess: results.success,
           itemsFailed: results.failed,
           completedAt: new Date(),
-          errorDetails: results.errors.length > 0 ? results.errors : null,
+          errorDetails: results.errors.length > 0 ? results.errors : undefined,
         },
       })
 
