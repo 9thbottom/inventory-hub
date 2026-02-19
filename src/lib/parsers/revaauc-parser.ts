@@ -88,8 +88,8 @@ export class RevaAucParser extends BaseParser {
       // 価格情報を含む行を検出
       // 価格情報を含む行を検出
       // パターン: ¥価格¥手数料NoQuantity付属品
-      // 手数料は3-5桁、その後にNo(1-2桁)+数量(1桁)が続く
-      const priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3,5})(\d{2,3})(.*)$/)
+      // 手数料はカンマ区切りまたは3-5桁の数字、その後にNo(1-2桁)+数量(1桁)が続く
+      const priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
       if (priceMatch) {
         const [, namePart, price, commission, noAndQty, accessories] = priceMatch
         
