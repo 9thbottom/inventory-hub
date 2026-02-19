@@ -3,6 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { AuthButton } from '@/components/auth-button'
 
 interface DriveFolder {
   id: string
@@ -17,6 +19,7 @@ interface DriveFolder {
 }
 
 export default function ImportPage() {
+  const { data: session, status } = useSession()
   const queryClient = useQueryClient()
   const [syncing, setSyncing] = useState(false)
 
@@ -66,26 +69,50 @@ export default function ImportPage() {
     }
   }
 
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">読み込み中...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            ログインが必要です
+          </h2>
+          <AuthButton />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
-          >
-            ← ホームに戻る
-          </Link>
-          <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold text-gray-900">取り込み管理</h1>
+        <div className="mb-8 flex justify-between items-start">
+          <div className="flex-1">
+            <Link
+              href="/"
+              className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
+            >
+              ← ホームに戻る
+            </Link>
+            <div className="flex justify-between items-center">
+              <h1 className="text-3xl font-bold text-gray-900">取り込み管理</h1>
             <button
               onClick={handleSync}
               disabled={syncing || syncMutation.isPending}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {syncing || syncMutation.isPending ? '同期中...' : 'Driveから同期'}
-            </button>
+              </button>
+            </div>
           </div>
+          <AuthButton />
         </div>
 
         {syncMutation.isSuccess && (

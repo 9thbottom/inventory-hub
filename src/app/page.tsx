@@ -1,9 +1,15 @@
 import Link from 'next/link'
+import { AuthButton } from '@/components/auth-button'
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* ヘッダー */}
+        <div className="flex justify-end mb-8">
+          <AuthButton />
+        </div>
+
         <div className="text-center">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
             Inventory Hub

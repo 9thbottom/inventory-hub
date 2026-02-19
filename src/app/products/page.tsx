@@ -3,6 +3,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
+import { AuthButton } from '@/components/auth-button'
 
 interface Product {
   id: string
@@ -18,6 +20,7 @@ interface Product {
 }
 
 export default function ProductsPage() {
+  const { data: session, status } = useSession()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
 
@@ -36,17 +39,41 @@ export default function ProductsPage() {
     },
   })
 
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">読み込み中...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            ログインが必要です
+          </h2>
+          <AuthButton />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
-          >
-            ← ホームに戻る
-          </Link>
-          <h1 className="text-3xl font-bold text-gray-900">商品一覧</h1>
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            <Link
+              href="/"
+              className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
+            >
+              ← ホームに戻る
+            </Link>
+            <h1 className="text-3xl font-bold text-gray-900">商品一覧</h1>
+          </div>
+          <AuthButton />
         </div>
 
         {/* 検索バー */}
