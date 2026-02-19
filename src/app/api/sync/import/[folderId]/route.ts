@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { downloadFile, listFiles } from '@/lib/google-drive'
-import { DaikichiParser } from '@/lib/parsers/daikichi-parser'
+import { ParserFactory } from '@/lib/parsers/parser-factory'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -62,9 +62,8 @@ export async function POST(
       // Google Drive APIでファイル一覧を取得
       const files = await listFiles(folder.driveFolderId)
       
-      // ファイルを分類
+      // ファイルを分類（CSVファイルを全て対象に）
       const csvFiles = files.filter(f =>
-        f.name.toLowerCase().includes('daikichi') &&
         f.name.toLowerCase().endsWith('.csv')
       )
       
@@ -97,8 +96,8 @@ export async function POST(
           // ファイルをダウンロード
           const buffer = await downloadFile(csvFile.id)
           
-          // パーサーで解析
-          const parser = new DaikichiParser()
+          // 業者名に応じた適切なパーサーを取得
+          const parser = ParserFactory.getParser(csvFile.mimeType, supplier.name)
           const products = await parser.parse(buffer)
           
           console.log(`${products.length}件の商品を抽出`)

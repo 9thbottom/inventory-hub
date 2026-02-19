@@ -23,7 +23,7 @@ export interface ParsedProduct {
 }
 
 export abstract class BaseParser {
-  abstract parse(fileBuffer: Buffer, config: ParserConfig): Promise<ParsedProduct[]>
+  abstract parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]>
   
   protected normalizePrice(value: any): number {
     if (typeof value === 'number') return value

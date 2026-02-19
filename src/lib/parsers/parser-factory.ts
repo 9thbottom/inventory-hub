@@ -1,12 +1,38 @@
 import { BaseParser } from './base-parser'
 import { CSVParser } from './csv-parser'
 import { PDFParser } from './pdf-parser'
+import { DaikichiParser } from './daikichi-parser'
+import { OtakarayaParser } from './otakaraya-parser'
+import { EcoringParser } from './ecoring-parser'
 
 export class ParserFactory {
-  static getParser(fileType: string): BaseParser {
+  /**
+   * ファイルタイプと業者名に基づいて適切なParserを返す
+   * @param fileType ファイルのMIMEタイプ
+   * @param supplierName 業者名（オプション）
+   */
+  static getParser(fileType: string, supplierName?: string): BaseParser {
     const type = fileType.toLowerCase()
     
+    // CSVファイルの場合、業者名に応じて専用Parserを返す
     if (type.includes('csv') || type === 'text/csv') {
+      if (supplierName) {
+        const normalizedName = supplierName.toLowerCase()
+        
+        if (normalizedName.includes('daikichi') || normalizedName.includes('大吉')) {
+          return new DaikichiParser()
+        }
+        
+        if (normalizedName.includes('otakaraya') || normalizedName.includes('おたからや')) {
+          return new OtakarayaParser()
+        }
+        
+        if (normalizedName.includes('ecoring')) {
+          return new EcoringParser()
+        }
+      }
+      
+      // デフォルトのCSVParser
       return new CSVParser()
     }
     

@@ -3,10 +3,10 @@ import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 import iconv from 'iconv-lite'
 
 export class CSVParser extends BaseParser {
-  async parse(fileBuffer: Buffer, config: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
     try {
       // エンコーディング変換（Shift-JIS対応）
-      const encoding = config.encoding || 'utf-8'
+      const encoding = config?.encoding || 'utf-8'
       let content: string
       
       if (encoding.toLowerCase() === 'shift-jis' || encoding.toLowerCase() === 'shift_jis') {
@@ -24,7 +24,7 @@ export class CSVParser extends BaseParser {
       })
 
       // マッピング設定を使用してデータを変換
-      const mapping = config.mapping || {}
+      const mapping = config?.mapping || {}
       const products: ParsedProduct[] = []
 
       for (const record of records) {
@@ -46,6 +46,13 @@ export class CSVParser extends BaseParser {
             rank: this.getMappedValue(record, mapping, 'rank'),
             genre: this.getMappedValue(record, mapping, 'genre'),
             quantity: this.getMappedValue(record, mapping, 'quantity'),
+          }
+
+          // マッピングされた全てのフィールドを追加（後処理で使用するため）
+          for (const [key, csvColumn] of Object.entries(mapping)) {
+            if (record[csvColumn] !== undefined) {
+              (product as any)[key] = record[csvColumn]
+            }
           }
 
           // 必須項目のチェック（nameは必須、productIdは後で生成される場合もある）
