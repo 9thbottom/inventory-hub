@@ -74,11 +74,23 @@ export async function POST(
         f.mimeType.includes('pdf')
       )
       
-      // Apreの場合、「落札明細」PDFを商品データとして処理
-      const productPdfFiles = pdfFiles.filter(f =>
-        f.name.includes('落札明細') &&
-        (supplierName.toLowerCase().includes('apre') || supplierName.includes('アプレ'))
-      )
+      // 業者ごとに商品PDFを判定
+      const productPdfFiles = pdfFiles.filter(f => {
+        const fileName = f.name.toLowerCase()
+        const supplier = supplierName.toLowerCase()
+        
+        // Apre: 落札明細PDF
+        if ((supplier.includes('apre') || supplier.includes('アプレ')) && f.name.includes('落札明細')) {
+          return true
+        }
+        
+        // RevaAuc: 精算書PDF
+        if ((supplier.includes('revaauc') || supplier.includes('リバオク') || supplier.includes('レバオク')) && f.name.includes('精算書')) {
+          return true
+        }
+        
+        return false
+      })
       
       // その他のPDFは参照用
       const referencePdfFiles = pdfFiles.filter(f =>

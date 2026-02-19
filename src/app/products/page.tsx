@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
@@ -31,6 +31,7 @@ export default function ProductsPage() {
   const { data: session, status } = useSession()
   const [search, setSearch] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['products', search],
@@ -74,6 +75,25 @@ export default function ProductsPage() {
       setExpandedFolders(new Set())
     } else {
       setExpandedFolders(new Set(Object.keys(groupedProducts)))
+    }
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: async (auctionName: string) => {
+      const res = await fetch(`/api/products/delete-by-auction?auctionName=${encodeURIComponent(auctionName)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('削除に失敗しました')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+
+  const handleDelete = (folderName: string) => {
+    if (window.confirm(`「${folderName}」の商品をすべて削除しますか？\nこの操作は取り消せません。`)) {
+      deleteMutation.mutate(folderName)
     }
   }
 
@@ -157,11 +177,11 @@ export default function ProductsPage() {
                 return (
                   <div key={folderName} className="bg-white rounded-lg shadow overflow-hidden">
                     {/* フォルダヘッダー */}
-                    <button
-                      onClick={() => toggleFolder(folderName)}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
+                    <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                      <button
+                        onClick={() => toggleFolder(folderName)}
+                        className="flex-1 flex items-center gap-4"
+                      >
                         <svg
                           className={`w-5 h-5 text-gray-500 transition-transform ${
                             isExpanded ? 'transform rotate-90' : ''
@@ -185,11 +205,20 @@ export default function ProductsPage() {
                             {products.length}件 / 合計 ¥{totalPrice.toLocaleString()}
                           </p>
                         </div>
+                      </button>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm text-gray-500">
+                          {products[0]?.supplier.name}
+                        </div>
+                        <button
+                          onClick={() => handleDelete(folderName)}
+                          disabled={deleteMutation.isPending}
+                          className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                        >
+                          削除
+                        </button>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {products[0]?.supplier.name}
-                      </div>
-                    </button>
+                    </div>
 
                     {/* 商品テーブル */}
                     {isExpanded && (

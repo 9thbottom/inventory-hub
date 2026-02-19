@@ -4,6 +4,9 @@ import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 /**
  * RevaAuc（リバオク）専用パーサー
  * PDFから精算書の落札商品一覧を解析
+ *
+ * 注意: pdf-parseライブラリではPDFの表構造が正しく抽出されず、
+ * ロット番号列が取得できません。代わりに請求書番号+Noを商品IDとして使用します。
  */
 export class RevaAucParser extends BaseParser {
   async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
@@ -42,6 +45,10 @@ export class RevaAucParser extends BaseParser {
     const products: ParsedProduct[] = []
     const lines = text.split('\n')
 
+    // 請求書番号を抽出
+    const invoiceNoMatch = text.match(/(\d{8,}_\d+)請求書No/)
+    const invoiceNo = invoiceNoMatch ? invoiceNoMatch[1] : 'UNKNOWN'
+
     // 「（A）御落札商品一覧」の後から商品データが始まる
     const startIndex = lines.findIndex(line => line.includes('（A）御落札商品一覧'))
     if (startIndex === -1) {
@@ -73,17 +80,44 @@ export class RevaAucParser extends BaseParser {
       }
 
       // 価格情報を含む行を検出
-      // パターン1: 行全体が価格情報（例: "¥98,000¥2,94011"）
-      const priceOnlyMatch = line.match(/^¥([\d,]+)¥([\d,]+)(\d+)(\d+)(.*)$/)
-      if (priceOnlyMatch) {
-        const [, price, commission, no, quantity, accessories] = priceOnlyMatch
-
-        if (nameLines.length > 0) {
-          const name = nameLines.join(' ').trim()
+      // パターン: ¥価格¥手数料NoQuantity付属品
+      //
+      // パターン1: カンマ付き手数料（4桁以上） + 2-3桁NoAndQty
+      // パターン2: 3桁手数料 + 2-3桁NoAndQty
+      
+      let priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
+      let commission, noAndQty, namePart, price, accessories
+      
+      if (priceMatch && priceMatch[3].includes(',')) {
+        // パターン1: カンマ付き手数料
+        [, namePart, price, commission, noAndQty, accessories] = priceMatch
+      } else {
+        // パターン2: 3桁手数料 + 2-3桁NoAndQty
+        priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3})(\d{2,3})(.*)$/)
+        if (priceMatch) {
+          [, namePart, price, commission, noAndQty, accessories] = priceMatch
+        }
+      }
+      
+      if (priceMatch && commission && noAndQty) {
+        // NoAndQtyから数量（最後の1桁）とNo（残り）を分離
+        // 2桁の場合: No(1桁) + 数量(1桁) 例: "11" → No=1, 数量=1
+        // 3桁の場合: No(2桁) + 数量(1桁) 例: "101" → No=10, 数量=1
+        const quantity = noAndQty.slice(-1)
+        const no = noAndQty.slice(0, -1)
+        
+        // 商品名を構築
+        const fullNameLines = (namePart && namePart.trim()) ? [...nameLines, namePart.trim()] : nameLines
+        const name = fullNameLines.join(' ').trim()
+        
+        if (name && namePart !== undefined && price !== undefined && accessories !== undefined) {
           const brand = this.extractBrand(name)
+          
+          // 商品IDはNoを使用
+          const productId = no
 
           products.push({
-            productId: no,
+            productId,
             originalProductId: no,
             name,
             purchasePrice: this.normalizePrice(price),
@@ -92,6 +126,7 @@ export class RevaAucParser extends BaseParser {
             brand,
             metadata: {
               no,
+              invoiceNo,
               accessories: accessories.trim() || undefined,
             },
           })
@@ -103,41 +138,12 @@ export class RevaAucParser extends BaseParser {
         continue
       }
 
-      // パターン2: 商品名と価格情報が同じ行（例: "プラダ　ガレリアバッグ　パープル¥42,000¥1,26041クロ"）
-      const nameWithPriceMatch = line.match(/^(.+?)¥([\d,]+)¥([\d,]+)(\d+)(\d+)(.*)$/)
-      if (nameWithPriceMatch) {
-        const [, namePart, price, commission, no, quantity, accessories] = nameWithPriceMatch
-
-        // 前の行の商品名と結合
-        const fullNameLines = [...nameLines, namePart.trim()]
-        const name = fullNameLines.join(' ').trim()
-        const brand = this.extractBrand(name)
-
-        products.push({
-          productId: no,
-          originalProductId: no,
-          name,
-          purchasePrice: this.normalizePrice(price),
-          quantity: parseInt(quantity) || 1,
-          commission: this.normalizePrice(commission),
-          brand,
-          metadata: {
-            no,
-            accessories: accessories.trim() || undefined,
-          },
-        })
-
-        // 次の商品のためにリセット
-        nameLines.length = 0
-        i++
-        continue
-      }
-
       // 商品名の一部として追加
       nameLines.push(line)
       i++
     }
 
+    console.log(`${products.length}件の商品を抽出`)
     return products
   }
 
