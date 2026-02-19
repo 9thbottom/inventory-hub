@@ -86,26 +86,41 @@ export class RevaAucParser extends BaseParser {
       }
 
       // 価格情報を含む行を検出
-      // 価格情報を含む行を検出
       // パターン: ¥価格¥手数料NoQuantity付属品
-      // 手数料はカンマ区切りまたは3-5桁の数字、その後にNo(1-2桁)+数量(1桁)が続く
-      const priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
-      if (priceMatch) {
-        const [, namePart, price, commission, noAndQty, accessories] = priceMatch
-        
+      //
+      // パターン1: カンマ付き手数料（4桁以上） + 2-3桁NoAndQty
+      // パターン2: 3桁手数料 + 3桁NoAndQty（商品10, 11のケース）
+      
+      let priceMatch = line.match(/^(.*)¥([\d,]+)¥([\d,]+)(\d{2,3})(.*)$/)
+      let commission, noAndQty, namePart, price, accessories
+      
+      if (priceMatch && priceMatch[3].includes(',')) {
+        // パターン1: カンマ付き手数料
+        [, namePart, price, commission, noAndQty, accessories] = priceMatch
+        console.log(`[解析パターン1] 手数料="${commission}", NoAndQty="${noAndQty}"`)
+      } else {
+        // パターン2: 3桁手数料 + 3桁NoAndQty
+        priceMatch = line.match(/^(.*)¥([\d,]+)¥(\d{3})(\d{3})(.*)$/)
+        if (priceMatch) {
+          [, namePart, price, commission, noAndQty, accessories] = priceMatch
+          console.log(`[解析パターン2] 手数料="${commission}", NoAndQty="${noAndQty}"`)
+        }
+      }
+      
+      if (priceMatch && commission && noAndQty) {
         // NoAndQtyから数量（最後の1桁）とNo（残り）を分離
         // 2桁の場合: No(1桁) + 数量(1桁) 例: "11" → No=1, 数量=1
         // 3桁の場合: No(2桁) + 数量(1桁) 例: "101" → No=10, 数量=1
         const quantity = noAndQty.slice(-1)
         const no = noAndQty.slice(0, -1)
         
-        console.log(`[解析] 手数料="${commission}", NoAndQty="${noAndQty}" → No="${no}", 数量="${quantity}"`)
+        console.log(`  → No="${no}", 数量="${quantity}"`)
         
         // 商品名を構築
         const fullNameLines = namePart.trim() ? [...nameLines, namePart.trim()] : nameLines
         const name = fullNameLines.join(' ').trim()
         
-        if (name) {
+        if (name && namePart !== undefined && price !== undefined && accessories !== undefined) {
           const brand = this.extractBrand(name)
           
           // 商品IDはNoを使用
