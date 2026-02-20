@@ -34,6 +34,10 @@ export async function GET(request: Request) {
         systemAmount: true,
         amountDifference: true,
         hasAmountMismatch: true,
+        participationFee: true,
+        participationFeeTaxType: true,
+        shippingFee: true,
+        shippingFeeTaxType: true,
         startedAt: true,
       },
     })

@@ -199,7 +199,7 @@ export async function PATCH(
           const systemAmount = Math.floor(productTotal + commissionTotal + participationFeeAmount + shippingFeeAmount)
           
           // 差額と不一致フラグを更新
-          let amountDifference = null
+          let amountDifference: number | null = null
           let hasAmountMismatch = false
           
           if (importLog.invoiceAmount !== null) {
@@ -207,15 +207,17 @@ export async function PATCH(
             hasAmountMismatch = amountDifference >= 1
           }
 
-          // ImportLogを更新
-          await prisma.importLog.update({
-            where: { id: importLog.id },
-            data: {
-              systemAmount: new Decimal(systemAmount),
-              amountDifference: amountDifference !== null ? new Decimal(amountDifference) : null,
-              hasAmountMismatch,
-            },
-          })
+          // ImportLogを更新（NaNチェック）
+          if (!isNaN(systemAmount) && isFinite(systemAmount)) {
+            await prisma.importLog.update({
+              where: { id: importLog.id },
+              data: {
+                systemAmount: new Decimal(systemAmount),
+                amountDifference: amountDifference !== null && !isNaN(amountDifference) ? new Decimal(amountDifference) : null,
+                hasAmountMismatch,
+              },
+            })
+          }
         }
       }
     }

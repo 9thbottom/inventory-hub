@@ -134,6 +134,8 @@ export default function ProductsPage() {
     onSuccess: () => {
       setEditingAuctionFees(null)
       setImportLogs({})
+      // 商品データも再取得して画面を更新
+      queryClient.invalidateQueries({ queryKey: ['products'] })
     },
   })
 
@@ -359,14 +361,14 @@ export default function ProductsPage() {
                               <span>商品合計: ¥{productTotal.toLocaleString()}</span>
                               
                               {/* 参加費 */}
-                              <button
+                              <span
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   if (importLog) {
                                     handleEditAuctionFees(folderName, importLog, supplierConfig)
                                   }
                                 }}
-                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                className="flex items-center gap-1 hover:text-blue-600 transition-colors cursor-pointer"
                                 title="クリックして編集"
                               >
                                 <span>参加費: ¥{participationFee.toLocaleString()}</span>
@@ -374,17 +376,17 @@ export default function ProductsPage() {
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                 </svg>
-                              </button>
+                              </span>
                               
                               {/* 送料 */}
-                              <button
+                              <span
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   if (importLog) {
                                     handleEditAuctionFees(folderName, importLog, supplierConfig)
                                   }
                                 }}
-                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                className="flex items-center gap-1 hover:text-blue-600 transition-colors cursor-pointer"
                                 title="クリックして編集"
                               >
                                 <span>送料: ¥{shippingFee.toLocaleString()}</span>
@@ -392,7 +394,7 @@ export default function ProductsPage() {
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                 </svg>
-                              </button>
+                              </span>
                               
                               <span className={hasAmountMismatch ? 'text-yellow-600 font-semibold' : ''}>
                                 最終請求額: ¥{finalInvoiceAmount.toLocaleString()}
@@ -428,7 +430,7 @@ export default function ProductsPage() {
                             <thead className="bg-gray-50">
                               <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  Inventory ID
+                                  在庫ID
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   商品ID
@@ -436,17 +438,17 @@ export default function ProductsPage() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   商品名
                                 </th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  商品単価（{productPriceTaxType === 'included' ? '税込' : '税別'}）
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                                  商品({productPriceTaxType === 'included' ? '税込' : '税別'})
                                 </th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  買い手数料（{commissionTaxType === 'included' ? '税込' : '税別'}）
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                                  手数料({commissionTaxType === 'included' ? '税込' : '税別'})
                                 </th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  合計金額（税込）
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                                  合計(税込)
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  ステータス
+                                  状態
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   登録日
