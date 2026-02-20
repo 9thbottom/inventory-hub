@@ -81,6 +81,7 @@ export class TimelessParser extends BaseParser {
             products.push({
               productId,
               originalProductId: productId,
+              rowNumber: no, // NoをrowNumberとして設定（並び順用）
               name: fullName,
               brand,
               purchasePrice: priceIncludingTax, // 税込価格を使用

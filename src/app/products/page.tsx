@@ -344,8 +344,15 @@ export default function ProductsPage() {
               .map(([folderName, products]) => {
                 const isExpanded = expandedFolders.has(folderName)
                 
+                // 商品をrowNumber順にソート（数値として比較）
+                const sortedProducts = [...products].sort((a, b) => {
+                  const rowA = a.rowNumber ? parseInt(a.rowNumber) : 999999
+                  const rowB = b.rowNumber ? parseInt(b.rowNumber) : 999999
+                  return rowA - rowB
+                })
+                
                 // 業者の税設定を取得
-                const supplierConfig = products[0]?.supplier?.parserConfig
+                const supplierConfig = sortedProducts[0]?.supplier?.parserConfig
                 const productPriceTaxType = supplierConfig?.productPriceTaxType || 'excluded'
                 const commissionTaxType = supplierConfig?.commissionTaxType || 'excluded'
                 const taxRate = supplierConfig?.taxRate || 0.1
@@ -376,7 +383,7 @@ export default function ProductsPage() {
                 }
                 
                 // 商品合計を計算（業者の税設定に基づく）
-                const productTotal = products.reduce((sum, p) => {
+                const productTotal = sortedProducts.reduce((sum, p) => {
                   const purchasePrice = Number(p.purchasePrice)
                   const commission = Number(p.commission || 0)
                   
@@ -442,7 +449,7 @@ export default function ProductsPage() {
                             )}
                           </h2>
                           <div className="text-sm text-gray-500">
-                            <p className="mb-1">{products.length}件</p>
+                            <p className="mb-1">{sortedProducts.length}件</p>
                             <div className="flex items-center gap-4 flex-wrap">
                               <span>商品合計: ¥{productTotal.toLocaleString()}</span>
                               
@@ -496,10 +503,10 @@ export default function ProductsPage() {
                       </button>
                       <div className="flex items-center gap-4">
                         <div className="text-sm text-gray-500">
-                          {products[0]?.supplier.name}
+                          {sortedProducts[0]?.supplier.name}
                         </div>
                         <button
-                          onClick={() => handleAddProduct(folderName, products[0]?.supplierId)}
+                          onClick={() => handleAddProduct(folderName, sortedProducts[0]?.supplierId)}
                           className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
                         >
                           商品追加
@@ -551,7 +558,7 @@ export default function ProductsPage() {
                               </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                              {products.map((product: Product) => {
+                              {sortedProducts.map((product: Product) => {
                                 const purchasePrice = Number(product.purchasePrice)
                                 const commission = Number(product.commission || 0)
                                 

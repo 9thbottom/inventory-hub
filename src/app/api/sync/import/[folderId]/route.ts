@@ -412,13 +412,27 @@ export async function POST(
               // ファイルをダウンロード
               const buffer = await downloadFile(pdfFile.id)
               
-              // 請求書総額を抽出
-              const invoiceSummary = await invoicePdfParser.extractInvoiceSummary(buffer, supplier.name)
+              // 業者名に応じた適切なパーサーを取得してPDFをパース
+              const pdfParser = ParserFactory.getParser(pdfFile.mimeType, supplier.name)
+              const pdfParseResult = await pdfParser.parse(buffer)
               
-              if (invoiceSummary) {
+              // ParseResultから請求書サマリーを取得
+              const invoiceSummary = Array.isArray(pdfParseResult)
+                ? undefined
+                : pdfParseResult.invoiceSummary
+              
+              if (invoiceSummary && invoiceSummary.totalAmount) {
                 results.invoiceAmount = invoiceSummary.totalAmount
                 console.log(`請求書総額を抽出: ¥${invoiceSummary.totalAmount.toLocaleString()} (${pdfFile.name})`)
                 break // 最初に見つかった請求書総額を使用
+              } else {
+                // 業者固有のパーサーで取得できない場合は汎用パーサーを試す
+                const fallbackSummary = await invoicePdfParser.extractInvoiceSummary(buffer, supplier.name)
+                if (fallbackSummary) {
+                  results.invoiceAmount = fallbackSummary.totalAmount
+                  console.log(`請求書総額を抽出（汎用パーサー）: ¥${fallbackSummary.totalAmount.toLocaleString()} (${pdfFile.name})`)
+                  break
+                }
               }
             }
 
