@@ -5,6 +5,12 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+
+// pdfjs-distのworker設定（ブラウザ用）
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+}
 
 interface DriveFolder {
   id: string
@@ -49,7 +55,25 @@ export default function ImportPage() {
 
   const importMutation = useMutation({
     mutationFn: async (folderId: string) => {
-      const res = await fetch(`/api/sync/import/${folderId}`, { method: 'POST' })
+      // フォルダ情報を取得
+      const folder = folders?.find((f: DriveFolder) => f.id === folderId)
+      if (!folder) throw new Error('フォルダが見つかりません')
+
+      // Ore PDFの場合、クライアントサイドでテキストを抽出
+      let extractedTexts: Record<string, string> = {}
+      
+      if (folder.auctionName.toLowerCase().includes('ore') || folder.auctionName.toLowerCase().includes('オーレ')) {
+        console.log('Ore PDFを検出: クライアントサイドでテキスト抽出を開始')
+        extractedTexts = await extractOrePdfTexts(folderId)
+      }
+
+      // サーバーにインポートリクエストを送信
+      const res = await fetch(`/api/sync/import/${folderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extractedTexts }),
+      })
+      
       if (!res.ok) throw new Error('取り込みに失敗しました')
       return res.json()
     },
@@ -57,6 +81,58 @@ export default function ImportPage() {
       queryClient.invalidateQueries({ queryKey: ['folders'] })
     },
   })
+
+  /**
+   * Ore PDFからクライアントサイドでテキストを抽出
+   */
+  const extractOrePdfTexts = async (folderId: string): Promise<Record<string, string>> => {
+    const extractedTexts: Record<string, string> = {}
+    
+    try {
+      // フォルダ内のファイル情報を取得
+      const folderRes = await fetch(`/api/sync/folders/${folderId}/files`)
+      if (!folderRes.ok) throw new Error('ファイル情報の取得に失敗しました')
+      
+      const files = await folderRes.json()
+      const pdfFiles = files.filter((f: any) =>
+        f.mimeType === 'application/pdf' && f.name.includes('Slip')
+      )
+
+      console.log(`Ore PDF: ${pdfFiles.length}件のPDFを処理`)
+
+      // 各PDFファイルを処理
+      for (const pdfFile of pdfFiles) {
+        try {
+          // Google DriveからPDFをダウンロード
+          const pdfRes = await fetch(`/api/sync/folders/${folderId}/files/${pdfFile.id}/download`)
+          if (!pdfRes.ok) continue
+
+          const arrayBuffer = await pdfRes.arrayBuffer()
+          
+          // pdfjs-distでテキストを抽出
+          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+          const pdfDocument = await loadingTask.promise
+          
+          let fullText = ''
+          for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+            const page = await pdfDocument.getPage(pageNum)
+            const textContent = await page.getTextContent()
+            const pageText = textContent.items.map((item: any) => item.str).join(' ')
+            fullText += pageText + '\n'
+          }
+
+          extractedTexts[pdfFile.id] = fullText
+          console.log(`Ore PDF: ${pdfFile.name} のテキスト抽出完了 (${fullText.length}文字)`)
+        } catch (error) {
+          console.error(`Ore PDF: ${pdfFile.name} の処理エラー:`, error)
+        }
+      }
+    } catch (error) {
+      console.error('Ore PDF抽出エラー:', error)
+    }
+
+    return extractedTexts
+  }
 
   const handleSync = () => {
     setSyncing(true)
