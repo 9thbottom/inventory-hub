@@ -45,7 +45,14 @@ export async function GET(request: Request) {
       prisma.product.findMany({
         where,
         include: {
-          supplier: true,
+          supplier: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              parserConfig: true,
+            },
+          },
         },
         // ページネーション前に全件取得してソート
       }),
