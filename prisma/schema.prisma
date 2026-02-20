@@ -91,6 +91,13 @@ model ImportLog {
   systemAmount      Decimal?    // システム計算の総額
   amountDifference  Decimal?    // 差額
   hasAmountMismatch Boolean     @default(false) // 金額不一致フラグ
+  
+  // オークション単位の参加費・送料（業者設定を上書き、nullの場合は業者設定を使用）
+  participationFee        Decimal?    // 参加費
+  participationFeeTaxType String?     // 'included' | 'excluded'
+  shippingFee             Decimal?    // 送料
+  shippingFeeTaxType      String?     // 'included' | 'excluded'
+  
   startedAt         DateTime    @default(now())
   completedAt       DateTime?
   

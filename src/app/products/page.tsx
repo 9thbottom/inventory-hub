@@ -5,41 +5,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
-
-interface Product {
-  id: string
-  productId: string
-  boxNumber?: string
-  rowNumber?: string
-  name: string
-  description?: string
-  purchasePrice: number
-  commission?: number
-  status: string
-  auctionName?: string
-  supplier: {
-    name: string
-    parserConfig?: {
-      productPriceTaxType?: 'included' | 'excluded'
-      commissionTaxType?: 'included' | 'excluded'
-      taxRate?: number
-    }
-  }
-  createdAt: string
-}
+import { EditProductModal, EditAuctionFeesModal } from '@/components/edit-modals'
+import { Product, ImportLog, EditProductData, EditAuctionFeesData } from '@/types/product'
 
 interface GroupedProducts {
   [auctionName: string]: Product[]
-}
-
-interface ImportLog {
-  id: string
-  folderPath: string
-  invoiceAmount: number | null
-  systemAmount: number | null
-  amountDifference: number | null
-  hasAmountMismatch: boolean
-  startedAt: string
 }
 
 export default function ProductsPage() {
@@ -47,6 +17,8 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [importLogs, setImportLogs] = useState<Record<string, ImportLog>>({})
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [editingAuctionFees, setEditingAuctionFees] = useState<{ folderName: string; importLog: ImportLog; supplierConfig: any } | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -132,10 +104,100 @@ export default function ProductsPage() {
     },
   })
 
+  const updateProductMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: EditProductData }) => {
+      const res = await fetch(`/api/vehicles/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) throw new Error('商品の更新に失敗しました')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      setEditingProduct(null)
+      setImportLogs({})
+    },
+  })
+
+  const updateAuctionFeesMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: EditAuctionFeesData }) => {
+      const res = await fetch(`/api/import-logs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) throw new Error('参加費・送料の更新に失敗しました')
+      return res.json()
+    },
+    onSuccess: () => {
+      setEditingAuctionFees(null)
+      setImportLogs({})
+    },
+  })
+
   const handleDelete = (folderName: string) => {
     if (window.confirm(`「${folderName}」の商品をすべて削除しますか？\nこの操作は取り消せません。`)) {
       deleteMutation.mutate(folderName)
     }
+  }
+
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product)
+  }
+
+  const handleSaveProduct = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editingProduct) return
+
+    const formData = new FormData(e.currentTarget)
+    const data: EditProductData = {
+      productId: formData.get('productId') as string,
+      name: formData.get('name') as string,
+      purchasePrice: Number(formData.get('purchasePrice')),
+      commission: Number(formData.get('commission')),
+    }
+
+    updateProductMutation.mutate({ id: editingProduct.id, data })
+  }
+
+  const handleEditAuctionFees = (folderName: string, importLog: ImportLog, supplierConfig: any) => {
+    const defaultParticipationFee = importLog.participationFee !== null
+      ? Number(importLog.participationFee)
+      : supplierConfig?.participationFee?.amount || 0
+    const defaultParticipationFeeTaxType = importLog.participationFeeTaxType || supplierConfig?.participationFee?.taxType || 'included'
+    const defaultShippingFee = importLog.shippingFee !== null
+      ? Number(importLog.shippingFee)
+      : supplierConfig?.shippingFee?.amount || 0
+    const defaultShippingFeeTaxType = importLog.shippingFeeTaxType || supplierConfig?.shippingFee?.taxType || 'included'
+
+    setEditingAuctionFees({
+      folderName,
+      supplierConfig,
+      importLog: {
+        ...importLog,
+        participationFee: defaultParticipationFee,
+        participationFeeTaxType: defaultParticipationFeeTaxType,
+        shippingFee: defaultShippingFee,
+        shippingFeeTaxType: defaultShippingFeeTaxType,
+      },
+    })
+  }
+
+  const handleSaveAuctionFees = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editingAuctionFees) return
+
+    const formData = new FormData(e.currentTarget)
+    const data: EditAuctionFeesData = {
+      participationFee: formData.get('participationFee') ? Number(formData.get('participationFee')) : null,
+      participationFeeTaxType: formData.get('participationFeeTaxType') as 'included' | 'excluded',
+      shippingFee: formData.get('shippingFee') ? Number(formData.get('shippingFee')) : null,
+      shippingFeeTaxType: formData.get('shippingFeeTaxType') as 'included' | 'excluded',
+    }
+
+    updateAuctionFeesMutation.mutate({ id: editingAuctionFees.importLog.id, data })
   }
 
   if (status === 'loading') {
@@ -214,6 +276,31 @@ export default function ProductsPage() {
                 const commissionTaxType = supplierConfig?.commissionTaxType || 'excluded'
                 const taxRate = supplierConfig?.taxRate || 0.1
                 
+                // ImportLogから参加費・送料を取得
+                const importLog = importLogs[folderName]
+                
+                // 参加費: ImportLogの値 → 業者設定の順で取得
+                let participationFee = 0
+                let participationFeeTaxType = 'included'
+                if (importLog?.participationFee !== null && importLog?.participationFee !== undefined) {
+                  participationFee = Number(importLog.participationFee)
+                  participationFeeTaxType = importLog.participationFeeTaxType || 'included'
+                } else if (supplierConfig?.participationFee) {
+                  participationFee = supplierConfig.participationFee.amount
+                  participationFeeTaxType = supplierConfig.participationFee.taxType
+                }
+                
+                // 送料: ImportLogの値 → 業者設定の順で取得
+                let shippingFee = 0
+                let shippingFeeTaxType = 'included'
+                if (importLog?.shippingFee !== null && importLog?.shippingFee !== undefined) {
+                  shippingFee = Number(importLog.shippingFee)
+                  shippingFeeTaxType = importLog.shippingFeeTaxType || 'included'
+                } else if (supplierConfig?.shippingFee) {
+                  shippingFee = supplierConfig.shippingFee.amount
+                  shippingFeeTaxType = supplierConfig.shippingFee.taxType
+                }
+                
                 // 商品合計を計算（業者の税設定に基づく）
                 const productTotal = products.reduce((sum, p) => {
                   const purchasePrice = Number(p.purchasePrice)
@@ -231,7 +318,6 @@ export default function ProductsPage() {
                 }, 0)
                 
                 // ImportLogから最終請求額を取得
-                const importLog = importLogs[folderName]
                 const finalInvoiceAmount = importLog?.systemAmount ? Number(importLog.systemAmount) : productTotal
                 const hasAmountMismatch = importLog?.hasAmountMismatch || false
 
@@ -269,8 +355,45 @@ export default function ProductsPage() {
                           </h2>
                           <div className="text-sm text-gray-500">
                             <p className="mb-1">{products.length}件</p>
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 flex-wrap">
                               <span>商品合計: ¥{productTotal.toLocaleString()}</span>
+                              
+                              {/* 参加費 */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (importLog) {
+                                    handleEditAuctionFees(folderName, importLog, supplierConfig)
+                                  }
+                                }}
+                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                title="クリックして編集"
+                              >
+                                <span>参加費: ¥{participationFee.toLocaleString()}</span>
+                                <span className="text-xs">({participationFeeTaxType === 'included' ? '税込' : '税別'})</span>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              
+                              {/* 送料 */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (importLog) {
+                                    handleEditAuctionFees(folderName, importLog, supplierConfig)
+                                  }
+                                }}
+                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                title="クリックして編集"
+                              >
+                                <span>送料: ¥{shippingFee.toLocaleString()}</span>
+                                <span className="text-xs">({shippingFeeTaxType === 'included' ? '税込' : '税別'})</span>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              
                               <span className={hasAmountMismatch ? 'text-yellow-600 font-semibold' : ''}>
                                 最終請求額: ¥{finalInvoiceAmount.toLocaleString()}
                               </span>
@@ -328,6 +451,9 @@ export default function ProductsPage() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   登録日
                                 </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                  操作
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -384,6 +510,14 @@ export default function ProductsPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                       {new Date(product.createdAt).toLocaleDateString('ja-JP')}
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      <button
+                                        onClick={() => handleEditProduct(product)}
+                                        className="text-blue-600 hover:text-blue-800"
+                                      >
+                                        編集
+                                      </button>
+                                    </td>
                                   </tr>
                                 )
                               })}
@@ -398,6 +532,27 @@ export default function ProductsPage() {
           </div>
         )}
       </div>
+
+      {/* モーダル */}
+      {editingProduct && (
+        <EditProductModal
+          product={editingProduct}
+          onSave={handleSaveProduct}
+          onCancel={() => setEditingProduct(null)}
+          isLoading={updateProductMutation.isPending}
+        />
+      )}
+
+      {editingAuctionFees && (
+        <EditAuctionFeesModal
+          folderName={editingAuctionFees.folderName}
+          importLog={editingAuctionFees.importLog}
+          supplierConfig={editingAuctionFees.supplierConfig}
+          onSave={handleSaveAuctionFees}
+          onCancel={() => setEditingAuctionFees(null)}
+          isLoading={updateAuctionFeesMutation.isPending}
+        />
+      )}
     </div>
   )
 }

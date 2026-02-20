@@ -485,17 +485,48 @@ export async function POST(
         console.log(`商品合計（税込）: ¥${productTotal.toLocaleString()}`)
         console.log(`手数料合計（税込）: ¥${commissionTotal.toLocaleString()}`)
 
-        // 参加費
-        let participationFee = supplierConfig.participationFee?.amount || 0
-        console.log(`参加費設定: ${JSON.stringify(supplierConfig.participationFee)}`)
-        if (supplierConfig.participationFee && supplierConfig.participationFee.taxType === 'excluded') {
+        // 参加費: ImportLogの値 → 業者設定の順で取得
+        let participationFee = 0
+        let participationFeeTaxType = 'included'
+        
+        if (importLog.participationFee !== null) {
+          // ImportLogに設定がある場合は優先
+          participationFee = Number(importLog.participationFee)
+          participationFeeTaxType = importLog.participationFeeTaxType || 'included'
+          console.log(`参加費設定: ImportLog優先 ¥${participationFee} (${participationFeeTaxType})`)
+        } else if (supplierConfig.participationFee) {
+          // 業者設定をフォールバック
+          participationFee = supplierConfig.participationFee.amount
+          participationFeeTaxType = supplierConfig.participationFee.taxType
+          console.log(`参加費設定: 業者設定 ${JSON.stringify(supplierConfig.participationFee)}`)
+        } else {
+          console.log(`参加費設定: なし`)
+        }
+        
+        if (participationFeeTaxType === 'excluded') {
           participationFee *= (1 + taxRate)
         }
         console.log(`参加費（税込）: ¥${participationFee.toLocaleString()}`)
 
-        // 送料
-        let shippingFee = supplierConfig.shippingFee?.amount || 0
-        if (supplierConfig.shippingFee && supplierConfig.shippingFee.taxType === 'excluded') {
+        // 送料: ImportLogの値 → 業者設定の順で取得
+        let shippingFee = 0
+        let shippingFeeTaxType = 'included'
+        
+        if (importLog.shippingFee !== null) {
+          // ImportLogに設定がある場合は優先
+          shippingFee = Number(importLog.shippingFee)
+          shippingFeeTaxType = importLog.shippingFeeTaxType || 'included'
+          console.log(`送料設定: ImportLog優先 ¥${shippingFee} (${shippingFeeTaxType})`)
+        } else if (supplierConfig.shippingFee) {
+          // 業者設定をフォールバック
+          shippingFee = supplierConfig.shippingFee.amount
+          shippingFeeTaxType = supplierConfig.shippingFee.taxType
+          console.log(`送料設定: 業者設定 ${JSON.stringify(supplierConfig.shippingFee)}`)
+        } else {
+          console.log(`送料設定: なし`)
+        }
+        
+        if (shippingFeeTaxType === 'excluded') {
           shippingFee *= (1 + taxRate)
         }
         console.log(`送料（税込）: ¥${shippingFee.toLocaleString()}`)
