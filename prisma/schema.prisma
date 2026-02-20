@@ -80,18 +80,23 @@ model DriveFolder {
 }
 
 model ImportLog {
-  id              String      @id @default(cuid())
-  folderPath      String
-  status          String      // success, partial, error
-  itemsProcessed  Int         @default(0)
-  itemsSuccess    Int         @default(0)
-  itemsFailed     Int         @default(0)
-  errorDetails    Json?
-  startedAt       DateTime    @default(now())
-  completedAt     DateTime?
+  id                String      @id @default(cuid())
+  folderPath        String
+  status            String      // success, partial, error
+  itemsProcessed    Int         @default(0)
+  itemsSuccess      Int         @default(0)
+  itemsFailed       Int         @default(0)
+  errorDetails      Json?
+  invoiceAmount     Decimal?    // PDF請求書の総額
+  systemAmount      Decimal?    // システム計算の総額
+  amountDifference  Decimal?    // 差額
+  hasAmountMismatch Boolean     @default(false) // 金額不一致フラグ
+  startedAt         DateTime    @default(now())
+  completedAt       DateTime?
   
   @@index([status])
   @@index([startedAt])
+  @@index([hasAmountMismatch])
 }
 
 model Account {

@@ -4,6 +4,8 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { downloadFile, listFiles } from '@/lib/google-drive'
 import { ParserFactory } from '@/lib/parsers/parser-factory'
 import { prisma } from '@/lib/prisma'
+import { ParseResult, SupplierConfig } from '@/lib/parsers/base-parser'
+import { Decimal } from '@prisma/client/runtime/library'
 
 /**
  * 指定フォルダのファイルを処理して商品データを取り込み
@@ -60,6 +62,10 @@ export async function POST(
       success: 0,
       failed: 0,
       errors: [] as string[],
+      invoiceAmount: null as number | null,
+      systemAmount: null as number | null,
+      amountDifference: null as number | null,
+      hasAmountMismatch: false,
     }
 
     try {
@@ -131,7 +137,10 @@ export async function POST(
           
           // 業者名に応じた適切なパーサーを取得
           const parser = ParserFactory.getParser(csvFile.mimeType, supplier.name)
-          const products = await parser.parse(buffer)
+          const parseResult = await parser.parse(buffer)
+          
+          // ParseResultから商品リストを取得
+          const products = Array.isArray(parseResult) ? parseResult : parseResult.products
           
           console.log(`${products.length}件の商品を抽出`)
           results.processed += products.length
@@ -218,20 +227,30 @@ export async function POST(
           const parser = ParserFactory.getParser(pdfFile.mimeType, supplier.name)
           
           // Oreの場合、クライアントから抽出済みテキストを使用
-          let products
+          let parseResult
           const isOre = supplier.name.toLowerCase().includes('ore') || supplier.name.toLowerCase().includes('オーレ')
           const hasExtractedText = extractedTexts[pdfFile.id]
           
           if (isOre && hasExtractedText) {
-            products = await parser.parse(extractedTexts[pdfFile.id])
+            parseResult = await parser.parse(extractedTexts[pdfFile.id])
           } else {
             // ファイルをダウンロード
             const buffer = await downloadFile(pdfFile.id)
-            products = await parser.parse(buffer)
+            parseResult = await parser.parse(buffer)
           }
+          
+          // ParseResultから商品リストと請求書情報を取得
+          const products = Array.isArray(parseResult) ? parseResult : parseResult.products
+          const invoiceSummary = Array.isArray(parseResult) ? undefined : parseResult.invoiceSummary
           
           console.log(`${products.length}件の商品を抽出`)
           results.processed += products.length
+
+          // 請求書の総額を記録（最初のPDFのみ）
+          if (invoiceSummary && results.invoiceAmount === null) {
+            results.invoiceAmount = invoiceSummary.totalAmount
+            console.log(`請求書総額: ¥${invoiceSummary.totalAmount.toLocaleString()}`)
+          }
 
           // 商品データを保存
           for (const product of products) {
@@ -328,6 +347,65 @@ export async function POST(
         }
       }
 
+      // 請求額の検証（請求書総額が取得できた場合）
+      if (results.invoiceAmount !== null) {
+        // 業者設定を取得
+        const supplierConfig = supplier.parserConfig as SupplierConfig | null
+        
+        if (supplierConfig) {
+          // 取り込んだ全商品を取得
+          const importedProducts = await prisma.product.findMany({
+            where: {
+              supplierId: supplier.id,
+              auctionDate: folder.auctionDate,
+            },
+          })
+
+          // システム側で請求額を計算
+          let productTotal = 0
+          let commissionTotal = 0
+
+          for (const product of importedProducts) {
+            productTotal += Number(product.purchasePrice)
+            commissionTotal += Number(product.commission || 0)
+          }
+
+          // 税込計算
+          if (supplierConfig.productPriceTaxType === 'excluded') {
+            productTotal *= (1 + supplierConfig.taxRate)
+          }
+          if (supplierConfig.commissionTaxType === 'excluded') {
+            commissionTotal *= (1 + supplierConfig.taxRate)
+          }
+
+          // 参加費
+          let participationFee = supplierConfig.participationFee?.amount || 0
+          if (supplierConfig.participationFee && supplierConfig.participationFee.taxType === 'excluded') {
+            participationFee *= (1 + supplierConfig.taxRate)
+          }
+
+          // 送料
+          let shippingFee = supplierConfig.shippingFee?.amount || 0
+          if (supplierConfig.shippingFee && supplierConfig.shippingFee.taxType === 'excluded') {
+            shippingFee *= (1 + supplierConfig.taxRate)
+          }
+
+          const systemAmount = Math.round(productTotal + commissionTotal + participationFee + shippingFee)
+          const amountDifference = Math.abs(results.invoiceAmount - systemAmount)
+          const hasAmountMismatch = amountDifference > 1 // 1円以上の差異を不一致とみなす
+
+          results.systemAmount = systemAmount
+          results.amountDifference = amountDifference
+          results.hasAmountMismatch = hasAmountMismatch
+
+          if (hasAmountMismatch) {
+            console.warn(`⚠️ 請求額不一致: 請求書=${results.invoiceAmount}, システム=${systemAmount}, 差額=${amountDifference}`)
+          } else {
+            console.log(`✅ 請求額一致: ¥${results.invoiceAmount.toLocaleString()}`)
+          }
+        }
+      }
+
       // インポートログを更新
       await prisma.importLog.update({
         where: { id: importLog.id },
@@ -339,6 +417,10 @@ export async function POST(
           itemsFailed: results.failed,
           completedAt: new Date(),
           errorDetails: results.errors.length > 0 ? results.errors : undefined,
+          invoiceAmount: results.invoiceAmount !== null ? new Decimal(results.invoiceAmount) : null,
+          systemAmount: results.systemAmount !== null ? new Decimal(results.systemAmount) : null,
+          amountDifference: results.amountDifference !== null ? new Decimal(results.amountDifference) : null,
+          hasAmountMismatch: results.hasAmountMismatch,
         },
       })
 

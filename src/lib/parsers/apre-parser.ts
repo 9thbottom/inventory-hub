@@ -1,13 +1,18 @@
 import pdf from 'pdf-parse'
-import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+import { BaseParser, ParserConfig, ParsedProduct, ParseResult, InvoiceSummary } from './base-parser'
 
 /**
  * Apre（アプレ）専用パーサー
  * PDFから落札明細を解析
  */
 export class ApreParser extends BaseParser {
-  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     try {
+      // 文字列の場合はエラー（ApreはBuffer必須）
+      if (typeof fileBuffer === 'string') {
+        throw new Error('Apre PDFはBufferが必要です')
+      }
+
       // バッファの検証
       if (!fileBuffer || fileBuffer.length === 0) {
         throw new Error('PDFファイルが空です')
@@ -28,7 +33,13 @@ export class ApreParser extends BaseParser {
         console.warn('Apre PDF: 商品データが見つかりませんでした')
       }
 
-      return products
+      // 請求書のサマリー情報を抽出
+      const invoiceSummary = this.extractInvoiceSummary(text)
+
+      return {
+        products,
+        invoiceSummary,
+      }
     } catch (error) {
       console.error('Apre PDFパースエラー:', error)
       throw new Error(`Apre PDFファイルの解析に失敗しました: ${error}`)
@@ -280,5 +291,48 @@ export class ApreParser extends BaseParser {
     ]
 
     return skipPatterns.some(pattern => line.includes(pattern))
+  }
+
+  /**
+   * 請求書のサマリー情報を抽出
+   * Apreの落札明細PDFから総計を抽出
+   */
+  private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
+    try {
+      const lines = text.split('\n')
+      
+      // 「総計」行を探す
+      // パターン: "総計 XXX,XXX XXX,XXX"
+      // 最初の金額が落札計、2番目が手数料計
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+        
+        if (line.startsWith('総計')) {
+          // 総計行から金額を抽出
+          // 例: "総計 1,234,567 123,456"
+          const amounts = line.replace('総計', '').trim().split(/\s+/)
+          
+          if (amounts.length >= 2) {
+            const subtotal = this.normalizePrice(amounts[0]) // 落札計
+            const commission = this.normalizePrice(amounts[1]) // 手数料計
+            const totalAmount = subtotal + commission
+            
+            return {
+              totalAmount,
+              subtotal,
+              metadata: {
+                commission,
+              },
+            }
+          }
+        }
+      }
+      
+      console.warn('Apre PDF: 総計が見つかりませんでした')
+      return undefined
+    } catch (error) {
+      console.error('請求書サマリー抽出エラー:', error)
+      return undefined
+    }
   }
 }

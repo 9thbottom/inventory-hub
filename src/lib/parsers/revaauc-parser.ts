@@ -1,5 +1,5 @@
 import pdf from 'pdf-parse'
-import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+import { BaseParser, ParserConfig, ParsedProduct, ParseResult, InvoiceSummary } from './base-parser'
 
 /**
  * RevaAuc（リバオク）専用パーサー
@@ -9,8 +9,13 @@ import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
  * ロット番号列が取得できません。代わりに請求書番号+Noを商品IDとして使用します。
  */
 export class RevaAucParser extends BaseParser {
-  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     try {
+      // 文字列の場合はエラー（RevaAucはBuffer必須）
+      if (typeof fileBuffer === 'string') {
+        throw new Error('RevaAuc PDFはBufferが必要です')
+      }
+
       // バッファの検証
       if (!fileBuffer || fileBuffer.length === 0) {
         throw new Error('PDFファイルが空です')
@@ -31,7 +36,13 @@ export class RevaAucParser extends BaseParser {
         console.warn('RevaAuc PDF: 商品データが見つかりませんでした')
       }
 
-      return products
+      // 請求書のサマリー情報を抽出
+      const invoiceSummary = this.extractInvoiceSummary(text)
+
+      return {
+        products,
+        invoiceSummary,
+      }
     } catch (error) {
       console.error('RevaAuc PDFパースエラー:', error)
       throw new Error(`RevaAuc PDFファイルの解析に失敗しました: ${error}`)
@@ -187,5 +198,34 @@ export class RevaAucParser extends BaseParser {
     ]
 
     return skipPatterns.some(pattern => line.includes(pattern))
+  }
+
+  /**
+   * 請求書のサマリー情報を抽出
+   * RevaAucの精算書から合計金額を抽出
+   */
+  private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
+    try {
+      // 「合計金額」を探す
+      // パターン: "合計金額 ¥XXX,XXX"
+      const totalMatch = text.match(/合計金額\s*¥([\d,]+)/)
+      
+      if (totalMatch) {
+        const totalAmount = this.normalizePrice(totalMatch[1])
+        
+        return {
+          totalAmount,
+          metadata: {
+            source: '合計金額',
+          },
+        }
+      }
+      
+      console.warn('RevaAuc PDF: 合計金額が見つかりませんでした')
+      return undefined
+    } catch (error) {
+      console.error('請求書サマリー抽出エラー:', error)
+      return undefined
+    }
   }
 }

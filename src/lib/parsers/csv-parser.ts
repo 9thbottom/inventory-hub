@@ -1,10 +1,15 @@
 import { parse } from 'csv-parse/sync'
-import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+import { BaseParser, ParserConfig, ParsedProduct, ParseResult } from './base-parser'
 import iconv from 'iconv-lite'
 
 export class CSVParser extends BaseParser {
-  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     try {
+      // 文字列の場合はエラー（CSVはBuffer必須）
+      if (typeof fileBuffer === 'string') {
+        throw new Error('CSV ParserはBufferが必要です')
+      }
+
       // エンコーディング変換（Shift-JIS対応）
       const encoding = config?.encoding || 'utf-8'
       let content: string
@@ -64,7 +69,10 @@ export class CSVParser extends BaseParser {
         }
       }
 
-      return products
+      // CSVには請求書総額情報がないため、商品リストのみを返す
+      return {
+        products,
+      }
     } catch (error) {
       console.error('CSVパースエラー:', error)
       throw new Error(`CSVファイルの解析に失敗しました: ${error}`)

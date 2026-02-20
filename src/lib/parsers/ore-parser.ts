@@ -1,4 +1,4 @@
-import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+import { BaseParser, ParserConfig, ParsedProduct, ParseResult, InvoiceSummary } from './base-parser'
 
 /**
  * Ore（日本時計オークション）専用パーサー
@@ -8,7 +8,7 @@ export class OreParser extends BaseParser {
   /**
    * PDFバッファまたは抽出済みテキストから商品データを解析
    */
-  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     try {
       let text: string
 
@@ -27,7 +27,13 @@ export class OreParser extends BaseParser {
       // 商品データを抽出
       const products = this.extractProducts(text)
 
-      return products
+      // 請求書のサマリー情報を抽出
+      const invoiceSummary = this.extractInvoiceSummary(text)
+
+      return {
+        products,
+        invoiceSummary,
+      }
     } catch (error) {
       console.error('Ore PDFパースエラー:', error)
       throw new Error(`Ore PDFファイルの解析に失敗しました: ${error}`)
@@ -179,5 +185,34 @@ export class OreParser extends BaseParser {
     }
     
     return result
+  }
+
+  /**
+   * 請求書のサマリー情報を抽出
+   * Oreの御精算書から買い合計金額を抽出
+   */
+  private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
+    try {
+      // 「買い合計金額」を探す
+      // パターン: "買い合計金額 -XXX,XXX"
+      const totalMatch = text.match(/買い合計金額\s+-\s*([\d,]+)/)
+      
+      if (totalMatch) {
+        const totalAmount = this.normalizePrice(totalMatch[1])
+        
+        return {
+          totalAmount,
+          metadata: {
+            source: '買い合計金額',
+          },
+        }
+      }
+      
+      console.warn('Ore PDF: 買い合計金額が見つかりませんでした')
+      return undefined
+    } catch (error) {
+      console.error('請求書サマリー抽出エラー:', error)
+      return undefined
+    }
   }
 }

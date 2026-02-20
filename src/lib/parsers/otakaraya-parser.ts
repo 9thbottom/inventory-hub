@@ -1,12 +1,12 @@
 import { CSVParser } from './csv-parser'
-import { ParserConfig, ParsedProduct } from './base-parser'
+import { ParserConfig, ParseResult } from './base-parser'
 
 /**
  * おたからや（Otakaraya）専用パーサー
  * CSVParserを拡張しておたからや固有の処理を追加
  */
 export class OtakarayaParser extends CSVParser {
-  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     // おたからやのデフォルト設定
     const otakarayaConfig: ParserConfig = {
       type: 'csv',
@@ -28,10 +28,10 @@ export class OtakarayaParser extends CSVParser {
       ...config,
     }
 
-    const products = await super.parse(fileBuffer, otakarayaConfig)
+    const result = await super.parse(fileBuffer, otakarayaConfig)
 
     // おたからや固有の後処理: 商品IDを札番に設定
-    return products.map(product => {
+    const products = result.products.map(product => {
       const record = product as any
       
       // マッピングされたフィールドから値を取得
@@ -57,5 +57,10 @@ export class OtakarayaParser extends CSVParser {
         },
       }
     })
+
+    return {
+      products,
+      invoiceSummary: result.invoiceSummary,
+    }
   }
 }

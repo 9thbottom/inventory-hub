@@ -1,5 +1,5 @@
 import { parse } from 'csv-parse/sync'
-import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+import { BaseParser, ParserConfig, ParsedProduct, ParseResult } from './base-parser'
 import iconv from 'iconv-lite'
 
 /**
@@ -7,8 +7,13 @@ import iconv from 'iconv-lite'
  * 2行ヘッダー（英語+日本語）に対応
  */
 export class EcoringParser extends BaseParser {
-  async parse(fileBuffer: Buffer, config?: ParserConfig): Promise<ParsedProduct[]> {
+  async parse(fileBuffer: Buffer | string, config?: ParserConfig): Promise<ParseResult> {
     try {
+      // 文字列の場合はエラー（EcoringはBuffer必須）
+      if (typeof fileBuffer === 'string') {
+        throw new Error('Ecoring ParserはBufferが必要です')
+      }
+
       // Shift-JISからUTF-8に変換
       const content = iconv.decode(fileBuffer, 'shift_jis')
       
@@ -77,7 +82,10 @@ export class EcoringParser extends BaseParser {
         }
       }
 
-      return products
+      // CSVには請求書総額情報がないため、商品リストのみを返す
+      return {
+        products,
+      }
     } catch (error) {
       console.error('EcoringCSVパースエラー:', error)
       throw new Error(`Ecoring CSVファイルの解析に失敗しました: ${error}`)

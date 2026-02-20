@@ -70,8 +70,17 @@ export default function ImportPage() {
       if (!res.ok) throw new Error('取り込みに失敗しました')
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['folders'] })
+      
+      // 請求額検証結果を表示
+      if (data.invoiceAmount !== null && data.systemAmount !== null) {
+        const message = data.hasAmountMismatch
+          ? `⚠️ 請求額に差異があります\n\n請求書: ¥${data.invoiceAmount.toLocaleString()}\nシステム: ¥${data.systemAmount.toLocaleString()}\n差額: ¥${data.amountDifference.toLocaleString()}\n\n内容を確認してください。`
+          : `✅ 請求額が一致しました\n\n請求額: ¥${data.invoiceAmount.toLocaleString()}`
+        
+        alert(message)
+      }
     },
   })
 
