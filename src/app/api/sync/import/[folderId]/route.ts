@@ -23,6 +23,10 @@ export async function POST(
     }
 
     const { folderId } = await params
+    
+    // リクエストボディから抽出済みテキストを取得（Ore PDF用）
+    const body = await request.json().catch(() => ({}))
+    const extractedTexts = body.extractedTexts || {}
 
     // フォルダ情報を取得
     const folder = await prisma.driveFolder.findUnique({
@@ -215,7 +219,15 @@ export async function POST(
           
           // 業者名に応じた適切なパーサーを取得
           const parser = ParserFactory.getParser(pdfFile.mimeType, supplier.name)
-          const products = await parser.parse(buffer)
+          
+          // Oreの場合、クライアントから抽出済みテキストを使用
+          let products
+          if ((supplier.name.toLowerCase().includes('ore') || supplier.name.toLowerCase().includes('オーレ')) && extractedTexts[pdfFile.id]) {
+            console.log(`Ore PDF: クライアントから抽出済みテキストを使用 (${pdfFile.name})`)
+            products = await parser.parse(extractedTexts[pdfFile.id])
+          } else {
+            products = await parser.parse(buffer)
+          }
           
           console.log(`${products.length}件の商品を抽出`)
           results.processed += products.length
