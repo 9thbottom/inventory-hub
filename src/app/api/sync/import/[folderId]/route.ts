@@ -6,6 +6,7 @@ import { ParserFactory } from '@/lib/parsers/parser-factory'
 import { prisma } from '@/lib/prisma'
 import { ParseResult, SupplierConfig } from '@/lib/parsers/base-parser'
 import { Decimal } from '@prisma/client/runtime/library'
+import { InvoicePdfParser } from '@/lib/parsers/invoice-pdf-parser'
 
 /**
  * 指定フォルダのファイルを処理して商品データを取り込み
@@ -325,25 +326,54 @@ export async function POST(
         }
       }
 
-      // 参照用PDFファイルは記録のみ（既存の場合はスキップ）
-      for (const pdfFile of referencePdfFiles) {
-        try {
-          await prisma.document.upsert({
-            where: { driveFileId: pdfFile.id },
-            create: {
-              fileName: pdfFile.name,
-              fileType: 'pdf',
-              driveFileId: pdfFile.id,
-              filePath: `${folder.folderPath}/${pdfFile.name}`,
-              driveFolderId: folder.id,
-              // processedAt: null（参照用として保存のみ）
-            },
-            update: {
-              // 参照用PDFは更新しない
-            },
-          })
-        } catch (pdfError) {
-          console.error(`PDF記録エラー: ${pdfFile.name}`, pdfError)
+      // 参照用PDFファイルから請求書総額を抽出（CSV業者用）
+      if (results.invoiceAmount === null && referencePdfFiles.length > 0) {
+        const invoicePdfParser = new InvoicePdfParser()
+        
+        for (const pdfFile of referencePdfFiles) {
+          try {
+            // 請求書と思われるPDFを判定
+            const fileName = pdfFile.name.toLowerCase()
+            const isInvoicePdf =
+              fileName.includes('請求') ||
+              fileName.includes('invoice') ||
+              fileName.includes('精算') ||
+              (fileName.endsWith('.pdf') && !fileName.includes('明細') && !fileName.includes('注文'))
+
+            if (isInvoicePdf) {
+              console.log(`請求書PDF処理中: ${pdfFile.name}`)
+              
+              // ファイルをダウンロード
+              const buffer = await downloadFile(pdfFile.id)
+              
+              // 請求書総額を抽出
+              const invoiceSummary = await invoicePdfParser.extractInvoiceSummary(buffer, supplier.name)
+              
+              if (invoiceSummary) {
+                results.invoiceAmount = invoiceSummary.totalAmount
+                console.log(`請求書総額を抽出: ¥${invoiceSummary.totalAmount.toLocaleString()} (${pdfFile.name})`)
+                break // 最初に見つかった請求書総額を使用
+              }
+            }
+
+            // PDFを記録
+            await prisma.document.upsert({
+              where: { driveFileId: pdfFile.id },
+              create: {
+                fileName: pdfFile.name,
+                fileType: 'pdf',
+                driveFileId: pdfFile.id,
+                filePath: `${folder.folderPath}/${pdfFile.name}`,
+                driveFolderId: folder.id,
+                // processedAt: null（参照用として保存のみ）
+              },
+              update: {
+                // 参照用PDFは更新しない
+              },
+            })
+          } catch (pdfError) {
+            console.error(`PDF記録エラー: ${pdfFile.name}`, pdfError)
+          }
         }
       }
 
