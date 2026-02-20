@@ -7,6 +7,7 @@ import { EcoringParser } from './ecoring-parser'
 import { ApreParser } from './apre-parser'
 import { RevaAucParser } from './revaauc-parser'
 import { OreParser } from './ore-parser'
+import { TimelessParser } from './timeless-parser'
 
 export class ParserFactory {
   /**
@@ -33,6 +34,10 @@ export class ParserFactory {
         if (normalizedName.includes('ecoring')) {
           return new EcoringParser()
         }
+        
+        if (normalizedName.includes('timeless') || normalizedName.includes('タイムレス')) {
+          return new TimelessParser()
+        }
       }
       
       // デフォルトのCSVParser
@@ -53,6 +58,10 @@ export class ParserFactory {
         
         if (normalizedName.includes('ore') || normalizedName.includes('オーレ')) {
           return new OreParser()
+        }
+        
+        if (normalizedName.includes('timeless') || normalizedName.includes('タイムレス')) {
+          return new TimelessParser()
         }
       }
       
