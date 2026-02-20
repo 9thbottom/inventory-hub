@@ -267,8 +267,11 @@ export default function SupplierDetailPage() {
                   step="0.1"
                   min="0"
                   max="100"
-                  value={config.taxRate * 100}
-                  onChange={(e) => setConfig({ ...config, taxRate: parseFloat(e.target.value) / 100 })}
+                  value={isNaN(config.taxRate) ? 10 : config.taxRate * 100}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value)
+                    setConfig({ ...config, taxRate: isNaN(value) ? 0.1 : value / 100 })
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   required
                 />
@@ -300,11 +303,14 @@ export default function SupplierDetailPage() {
                         <input
                           type="number"
                           placeholder="金額"
-                          value={config.participationFee.amount}
-                          onChange={(e) => setConfig({
-                            ...config,
-                            participationFee: { ...config.participationFee!, amount: parseFloat(e.target.value) || 0 }
-                          })}
+                          value={isNaN(config.participationFee.amount) ? 0 : config.participationFee.amount}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value)
+                            setConfig({
+                              ...config,
+                              participationFee: { ...config.participationFee!, amount: isNaN(value) ? 0 : value }
+                            })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                         />
                         <div className="flex gap-4">
@@ -361,11 +367,14 @@ export default function SupplierDetailPage() {
                         <input
                           type="number"
                           placeholder="金額"
-                          value={config.shippingFee.amount}
-                          onChange={(e) => setConfig({
-                            ...config,
-                            shippingFee: { ...config.shippingFee!, amount: parseFloat(e.target.value) || 0 }
-                          })}
+                          value={isNaN(config.shippingFee.amount) ? 0 : config.shippingFee.amount}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value)
+                            setConfig({
+                              ...config,
+                              shippingFee: { ...config.shippingFee!, amount: isNaN(value) ? 0 : value }
+                            })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                         />
                         <div className="flex gap-4">

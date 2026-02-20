@@ -15,6 +15,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ folderId: string }> }
 ) {
+  const { folderId } = await params
+  let importLogId: string | null = null
+
   try {
     const session = await getServerSession(authOptions)
     
@@ -24,8 +27,6 @@ export async function POST(
         { status: 401 }
       )
     }
-
-    const { folderId } = await params
     
     // リクエストボディから抽出済みテキストを取得（Ore PDF用）
     const body = await request.json().catch(() => ({}))
@@ -57,6 +58,7 @@ export async function POST(
         status: 'processing',
       },
     })
+    importLogId = importLog.id
 
     const results = {
       processed: 0,
@@ -489,6 +491,28 @@ export async function POST(
     }
   } catch (error) {
     console.error('インポートエラー:', error)
+    
+    // エラー時にステータスを確実にerrorに戻す
+    try {
+      await prisma.driveFolder.update({
+        where: { id: folderId },
+        data: { status: 'error' },
+      })
+      
+      if (importLogId) {
+        await prisma.importLog.update({
+          where: { id: importLogId },
+          data: {
+            status: 'error',
+            completedAt: new Date(),
+            errorDetails: [String(error)],
+          },
+        })
+      }
+    } catch (updateError) {
+      console.error('ステータス更新エラー:', updateError)
+    }
+    
     return NextResponse.json(
       { error: 'インポート処理に失敗しました', details: String(error) },
       { status: 500 }
