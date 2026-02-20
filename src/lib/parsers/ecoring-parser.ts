@@ -17,13 +17,21 @@ export class EcoringParser extends BaseParser {
       // Shift-JISからUTF-8に変換
       const content = iconv.decode(fileBuffer, 'shift_jis')
       
-      // CSVをパース（2行目の日本語ヘッダーをスキップして、1行目の英語ヘッダーを使用）
-      const records = parse(content, {
+      // 行を分割して、1行目（英語ヘッダー）と3行目以降（データ）を結合
+      const lines = content.split('\n')
+      if (lines.length < 3) {
+        throw new Error('Ecoring CSVファイルの形式が不正です（最低3行必要）')
+      }
+      
+      // 1行目（英語ヘッダー）+ 3行目以降（データ）を結合
+      const csvContent = [lines[0], ...lines.slice(2)].join('\n')
+      
+      // CSVをパース
+      const records = parse(csvContent, {
         columns: true,
         skip_empty_lines: true,
         trim: true,
         bom: true,
-        from_line: 2, // 2行目（日本語ヘッダー）をスキップ
       })
 
       const products: ParsedProduct[] = []

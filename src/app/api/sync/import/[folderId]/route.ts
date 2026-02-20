@@ -31,6 +31,9 @@ export async function POST(
     // リクエストボディから抽出済みテキストを取得（Ore PDF用）
     const body = await request.json().catch(() => ({}))
     const extractedTexts = body.extractedTexts || {}
+    console.log('=== 受信したextractedTexts ===')
+    console.log('Keys:', Object.keys(extractedTexts))
+    console.log('Count:', Object.keys(extractedTexts).length)
 
     // フォルダ情報を取得
     const folder = await prisma.driveFolder.findUnique({
@@ -231,11 +234,22 @@ export async function POST(
           
           // Oreの場合、クライアントから抽出済みテキストを使用
           let parseResult
-          const isOre = supplier.name.toLowerCase().includes('ore') || supplier.name.toLowerCase().includes('オーレ')
+          const supplierConfig = supplier.parserConfig as any
+          const isOre =
+            supplier.name.toLowerCase().includes('ore') ||
+            supplier.name.toLowerCase().includes('オーレ') ||
+            supplier.name.toLowerCase().includes('日本時計') ||
+            (supplierConfig && supplierConfig.parser === 'ore')
           const hasExtractedText = extractedTexts[pdfFile.id]
           
+          console.log(`業者名: ${supplier.name}, isOre: ${isOre}, hasExtractedText: ${!!hasExtractedText}`)
+          
           if (isOre && hasExtractedText) {
+            console.log(`Ore: 抽出済みテキストを使用`)
             parseResult = await parser.parse(extractedTexts[pdfFile.id])
+          } else if (isOre && !hasExtractedText) {
+            console.warn(`Ore PDFですが、抽出済みテキストがありません。スキップします。`)
+            continue
           } else {
             // ファイルをダウンロード
             const buffer = await downloadFile(pdfFile.id)
@@ -328,11 +342,37 @@ export async function POST(
         }
       }
 
-      // 参照用PDFファイルから請求書総額を抽出（CSV業者用）
-      if (results.invoiceAmount === null && referencePdfFiles.length > 0) {
+      // 参照用PDFファイルから請求書総額を抽出
+      // Apreの場合は商品PDFから抽出した金額を上書きする
+      const supplierNameLower = supplier.name.toLowerCase()
+      const isApre = supplierNameLower.includes('apre') || supplierNameLower.includes('アプレ')
+      
+      if ((results.invoiceAmount === null || isApre) && referencePdfFiles.length > 0) {
         const invoicePdfParser = new InvoicePdfParser()
         
-        for (const pdfFile of referencePdfFiles) {
+        // ファイルを優先順位でソート
+        const sortedFiles = [...referencePdfFiles].sort((a, b) => {
+          const aName = a.name.toLowerCase()
+          const bName = b.name.toLowerCase()
+          
+          if (isApre) {
+            // Apreの場合: 「明細一覧」を最優先
+            const aIsTarget = aName.includes('明細一覧') || aName.includes('オークション明細')
+            const bIsTarget = bName.includes('明細一覧') || bName.includes('オークション明細')
+            if (aIsTarget && !bIsTarget) return -1
+            if (!aIsTarget && bIsTarget) return 1
+          }
+          
+          // その他: 「請求」を含むファイルを優先
+          const aIsInvoice = aName.includes('請求') || aName.includes('invoice')
+          const bIsInvoice = bName.includes('請求') || bName.includes('invoice')
+          if (aIsInvoice && !bIsInvoice) return -1
+          if (!aIsInvoice && bIsInvoice) return 1
+          
+          return 0
+        })
+        
+        for (const pdfFile of sortedFiles) {
           try {
             // 請求書と思われるPDFを判定
             const fileName = pdfFile.name.toLowerCase()
@@ -340,7 +380,9 @@ export async function POST(
               fileName.includes('請求') ||
               fileName.includes('invoice') ||
               fileName.includes('精算') ||
-              (fileName.endsWith('.pdf') && !fileName.includes('明細') && !fileName.includes('注文'))
+              fileName.includes('明細一覧') ||
+              fileName.includes('オークション明細') ||
+              (fileName.endsWith('.pdf') && !fileName.includes('落札明細') && !fileName.includes('注文'))
 
             if (isInvoicePdf) {
               console.log(`請求書PDF処理中: ${pdfFile.name}`)
@@ -379,54 +421,75 @@ export async function POST(
         }
       }
 
-      // 請求額の検証（請求書総額が取得できた場合）
-      if (results.invoiceAmount !== null) {
-        // 業者設定を取得
-        const supplierConfig = supplier.parserConfig as SupplierConfig | null
+      // 請求額の検証（業者設定がある場合は常に実行）
+      const supplierConfig = supplier.parserConfig as SupplierConfig | null
+      
+      console.log('=== 業者設定 ===')
+      console.log(JSON.stringify(supplierConfig, null, 2))
+      
+      if (supplierConfig) {
+        // taxRateのデフォルト値を設定（未定義の場合は10%）
+        const taxRate = supplierConfig.taxRate ?? 0.1
+        console.log(`税率: ${(taxRate * 100).toFixed(1)}%`)
         
-        if (supplierConfig) {
-          // 取り込んだ全商品を取得
-          const importedProducts = await prisma.product.findMany({
-            where: {
-              supplierId: supplier.id,
-              auctionDate: folder.auctionDate,
-            },
-          })
+        // 取り込んだ全商品を取得
+        const importedProducts = await prisma.product.findMany({
+          where: {
+            supplierId: supplier.id,
+            auctionDate: folder.auctionDate,
+          },
+        })
 
-          // システム側で請求額を計算
-          let productTotal = 0
-          let commissionTotal = 0
+        // システム側で請求額を計算
+        let productTotal = 0
+        let commissionTotal = 0
 
-          for (const product of importedProducts) {
-            productTotal += Number(product.purchasePrice)
-            commissionTotal += Number(product.commission || 0)
-          }
+        for (const product of importedProducts) {
+          productTotal += Number(product.purchasePrice)
+          commissionTotal += Number(product.commission || 0)
+        }
 
-          // 税込計算
-          if (supplierConfig.productPriceTaxType === 'excluded') {
-            productTotal *= (1 + supplierConfig.taxRate)
-          }
-          if (supplierConfig.commissionTaxType === 'excluded') {
-            commissionTotal *= (1 + supplierConfig.taxRate)
-          }
+        console.log(`=== 計算開始 ===`)
+        console.log(`商品合計（税別）: ¥${productTotal.toLocaleString()}`)
+        console.log(`手数料合計（税別）: ¥${commissionTotal.toLocaleString()}`)
 
-          // 参加費
-          let participationFee = supplierConfig.participationFee?.amount || 0
-          if (supplierConfig.participationFee && supplierConfig.participationFee.taxType === 'excluded') {
-            participationFee *= (1 + supplierConfig.taxRate)
-          }
+        // 税込計算（個別に丸めず、合計してから丸める）
+        if (supplierConfig.productPriceTaxType === 'excluded') {
+          productTotal *= (1 + taxRate)
+        }
+        if (supplierConfig.commissionTaxType === 'excluded') {
+          commissionTotal *= (1 + taxRate)
+        }
+        console.log(`商品合計（税込）: ¥${productTotal.toLocaleString()}`)
+        console.log(`手数料合計（税込）: ¥${commissionTotal.toLocaleString()}`)
 
-          // 送料
-          let shippingFee = supplierConfig.shippingFee?.amount || 0
-          if (supplierConfig.shippingFee && supplierConfig.shippingFee.taxType === 'excluded') {
-            shippingFee *= (1 + supplierConfig.taxRate)
-          }
+        // 参加費
+        let participationFee = supplierConfig.participationFee?.amount || 0
+        console.log(`参加費設定: ${JSON.stringify(supplierConfig.participationFee)}`)
+        if (supplierConfig.participationFee && supplierConfig.participationFee.taxType === 'excluded') {
+          participationFee *= (1 + taxRate)
+        }
+        console.log(`参加費（税込）: ¥${participationFee.toLocaleString()}`)
 
-          const systemAmount = Math.round(productTotal + commissionTotal + participationFee + shippingFee)
+        // 送料
+        let shippingFee = supplierConfig.shippingFee?.amount || 0
+        if (supplierConfig.shippingFee && supplierConfig.shippingFee.taxType === 'excluded') {
+          shippingFee *= (1 + taxRate)
+        }
+        console.log(`送料（税込）: ¥${shippingFee.toLocaleString()}`)
+
+        // 合計してから切り捨て（端数処理は最後に1回だけ）
+        const systemAmount = Math.floor(productTotal + commissionTotal + participationFee + shippingFee)
+        results.systemAmount = systemAmount
+        
+        console.log(`=== システム計算額 ===`)
+        console.log(`合計: ¥${systemAmount.toLocaleString()} = 商品¥${Math.round(productTotal).toLocaleString()} + 手数料¥${Math.round(commissionTotal).toLocaleString()} + 参加費¥${Math.round(participationFee).toLocaleString()} + 送料¥${Math.round(shippingFee).toLocaleString()}`)
+
+        // 請求書総額が取得できた場合のみ比較
+        if (results.invoiceAmount !== null) {
           const amountDifference = Math.abs(results.invoiceAmount - systemAmount)
-          const hasAmountMismatch = amountDifference > 1 // 1円以上の差異を不一致とみなす
+          const hasAmountMismatch = amountDifference >= 1 // 1円以上の差異を不一致とみなす
 
-          results.systemAmount = systemAmount
           results.amountDifference = amountDifference
           results.hasAmountMismatch = hasAmountMismatch
 
@@ -435,6 +498,10 @@ export async function POST(
           } else {
             console.log(`✅ 請求額一致: ¥${results.invoiceAmount.toLocaleString()}`)
           }
+        } else {
+          // 請求書総額が取得できなかった場合は不一致として扱う
+          results.hasAmountMismatch = true
+          console.warn(`⚠️ 請求書総額が取得できませんでした。システム計算額: ¥${systemAmount.toLocaleString()}`)
         }
       }
 
@@ -449,9 +516,12 @@ export async function POST(
           itemsFailed: results.failed,
           completedAt: new Date(),
           errorDetails: results.errors.length > 0 ? results.errors : undefined,
-          invoiceAmount: results.invoiceAmount !== null ? new Decimal(results.invoiceAmount) : null,
-          systemAmount: results.systemAmount !== null ? new Decimal(results.systemAmount) : null,
-          amountDifference: results.amountDifference !== null ? new Decimal(results.amountDifference) : null,
+          invoiceAmount: results.invoiceAmount !== null && !isNaN(results.invoiceAmount) && isFinite(results.invoiceAmount)
+            ? new Decimal(results.invoiceAmount) : null,
+          systemAmount: results.systemAmount !== null && !isNaN(results.systemAmount) && isFinite(results.systemAmount)
+            ? new Decimal(results.systemAmount) : null,
+          amountDifference: results.amountDifference !== null && !isNaN(results.amountDifference) && isFinite(results.amountDifference)
+            ? new Decimal(results.amountDifference) : null,
           hasAmountMismatch: results.hasAmountMismatch,
         },
       })

@@ -299,30 +299,64 @@ export class ApreParser extends BaseParser {
    */
   private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
     try {
+      console.log('Apre PDF テキスト（最初の1000文字）:', text.substring(0, 1000))
+      
       const lines = text.split('\n')
       
       // 「総計」行を探す
-      // パターン: "総計 XXX,XXX XXX,XXX"
-      // 最初の金額が落札計、2番目が手数料計
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim()
         
-        if (line.startsWith('総計')) {
-          // 総計行から金額を抽出
-          // 例: "総計 1,234,567 123,456"
-          const amounts = line.replace('総計', '').trim().split(/\s+/)
+        if (line.includes('総計')) {
+          console.log(`Apre PDF: 総計行を発見 (行${i}): "${line}"`)
           
-          if (amounts.length >= 2) {
-            const subtotal = this.normalizePrice(amounts[0]) // 落札計
-            const commission = this.normalizePrice(amounts[1]) // 手数料計
-            const totalAmount = subtotal + commission
+          // パターン1: 同じ行に金額がある場合
+          const sameLine = line.replace('総計', '').trim()
+          if (sameLine) {
+            const amounts = sameLine.split(/\s+/).filter(a => a)
+            console.log(`Apre PDF: 同じ行の金額配列:`, amounts)
             
-            return {
-              totalAmount,
-              subtotal,
-              metadata: {
-                commission,
-              },
+            if (amounts.length >= 3) {
+              const totalAmount = this.normalizePrice(amounts[2])
+              const subtotal = this.normalizePrice(amounts[0])
+              const tax = this.normalizePrice(amounts[1])
+              console.log(`Apre PDF: 総計=${totalAmount}, 落札計=${subtotal}, 消費税=${tax}`)
+              return { totalAmount, subtotal, tax }
+            } else if (amounts.length >= 2) {
+              const subtotal = this.normalizePrice(amounts[0])
+              const commission = this.normalizePrice(amounts[1])
+              const totalAmount = subtotal + commission
+              console.log(`Apre PDF: 総計=${totalAmount}, 落札計=${subtotal}, 手数料計=${commission}`)
+              return { totalAmount, subtotal, metadata: { commission } }
+            } else if (amounts.length === 1) {
+              const totalAmount = this.normalizePrice(amounts[0])
+              console.log(`Apre PDF: 総計=${totalAmount}`)
+              return { totalAmount }
+            }
+          }
+          
+          // パターン2: 次の行に金額がある場合
+          if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim()
+            console.log(`Apre PDF: 次の行 (行${i+1}): "${nextLine}"`)
+            
+            // 次の行が数字で始まる場合
+            if (/^[\d,]+/.test(nextLine)) {
+              const amounts = nextLine.split(/\s+/).filter(a => a && /[\d,]+/.test(a))
+              console.log(`Apre PDF: 次の行の金額配列:`, amounts)
+              
+              if (amounts.length >= 2) {
+                // 落札計と手数料計
+                const subtotal = this.normalizePrice(amounts[0])
+                const commission = this.normalizePrice(amounts[1])
+                const totalAmount = subtotal + commission
+                console.log(`Apre PDF: 総計=${totalAmount}, 落札計=${subtotal}, 手数料計=${commission}`)
+                return { totalAmount, subtotal, metadata: { commission } }
+              } else if (amounts.length === 1) {
+                const totalAmount = this.normalizePrice(amounts[0])
+                console.log(`Apre PDF: 総計=${totalAmount}`)
+                return { totalAmount }
+              }
             }
           }
         }

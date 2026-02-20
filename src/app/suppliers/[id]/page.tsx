@@ -70,9 +70,15 @@ export default function SupplierDetailPage() {
     },
   })
 
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault()
-    updateSupplierMutation.mutate({ parserConfig: config })
+    // taxRateが未定義の場合はデフォルト値を設定
+    const configToSave = {
+      ...config,
+      taxRate: config.taxRate ?? 0.1
+    }
+    updateSupplierMutation.mutate({ parserConfig: configToSave })
   }
 
   if (status === 'loading' || isLoading) {
@@ -171,7 +177,7 @@ export default function SupplierDetailPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   消費税率
                 </label>
-                <p className="text-gray-900">{(config.taxRate * 100).toFixed(1)}%</p>
+                <p className="text-gray-900">{((config.taxRate ?? 0.1) * 100).toFixed(1)}%</p>
               </div>
 
               {config.participationFee && (

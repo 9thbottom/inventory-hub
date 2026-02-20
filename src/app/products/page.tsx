@@ -27,10 +27,21 @@ interface GroupedProducts {
   [auctionName: string]: Product[]
 }
 
+interface ImportLog {
+  id: string
+  folderPath: string
+  invoiceAmount: number | null
+  systemAmount: number | null
+  amountDifference: number | null
+  hasAmountMismatch: boolean
+  startedAt: string
+}
+
 export default function ProductsPage() {
   const { data: session, status } = useSession()
   const [search, setSearch] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [importLogs, setImportLogs] = useState<Record<string, ImportLog>>({})
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -58,6 +69,31 @@ export default function ProductsPage() {
       }
       groupedProducts[folderName].push(product)
     })
+  }
+
+  // ImportLogデータを取得
+  const fetchImportLogs = async () => {
+    const logs: Record<string, ImportLog> = {}
+    for (const folderName of Object.keys(groupedProducts)) {
+      if (folderName === '未分類') continue
+      try {
+        const res = await fetch(`/api/import-logs?auctionName=${encodeURIComponent(folderName)}`)
+        if (res.ok) {
+          const log = await res.json()
+          if (log) {
+            logs[folderName] = log
+          }
+        }
+      } catch (error) {
+        console.error(`ImportLog取得エラー (${folderName}):`, error)
+      }
+    }
+    setImportLogs(logs)
+  }
+
+  // 商品データが読み込まれたらImportLogを取得
+  if (data?.products && Object.keys(importLogs).length === 0 && Object.keys(groupedProducts).length > 0) {
+    fetchImportLogs()
   }
 
   const toggleFolder = (folderName: string) => {
@@ -166,13 +202,18 @@ export default function ProductsPage() {
               .sort(([a], [b]) => b.localeCompare(a)) // 新しい順にソート
               .map(([folderName, products]) => {
                 const isExpanded = expandedFolders.has(folderName)
-                // PDFの計算方法に合わせる: 全商品の小計を合計してから消費税を計算
+                // 商品合計（税込）: 全商品の小計を合計してから消費税を計算
                 const subtotalSum = products.reduce((sum, p) => {
                   const purchasePrice = Number(p.purchasePrice)
                   const commission = Number(p.commission || 0)
                   return sum + purchasePrice + commission
                 }, 0)
-                const totalPrice = subtotalSum + Math.floor(subtotalSum * 0.1)
+                const productTotal = subtotalSum + Math.floor(subtotalSum * 0.1)
+                
+                // ImportLogから最終請求額を取得
+                const importLog = importLogs[folderName]
+                const finalInvoiceAmount = importLog?.systemAmount ? Number(importLog.systemAmount) : productTotal
+                const hasAmountMismatch = importLog?.hasAmountMismatch || false
 
                 return (
                   <div key={folderName} className="bg-white rounded-lg shadow overflow-hidden">
@@ -198,12 +239,28 @@ export default function ProductsPage() {
                           />
                         </svg>
                         <div className="text-left">
-                          <h2 className="text-lg font-semibold text-gray-900">
+                          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                             {folderName}
+                            {hasAmountMismatch && (
+                              <span className="text-yellow-600" title="請求額が一致しません">
+                                ⚠️
+                              </span>
+                            )}
                           </h2>
-                          <p className="text-sm text-gray-500">
-                            {products.length}件 / 合計 ¥{totalPrice.toLocaleString()}
-                          </p>
+                          <div className="text-sm text-gray-500">
+                            <p className="mb-1">{products.length}件</p>
+                            <div className="flex items-center gap-4">
+                              <span>商品合計: ¥{productTotal.toLocaleString()}</span>
+                              <span className={hasAmountMismatch ? 'text-yellow-600 font-semibold' : ''}>
+                                最終請求額: ¥{finalInvoiceAmount.toLocaleString()}
+                              </span>
+                              {importLog?.invoiceAmount && (
+                                <span className="text-xs text-gray-400">
+                                  (PDF請求額: ¥{Number(importLog.invoiceAmount).toLocaleString()})
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </button>
                       <div className="flex items-center gap-4">

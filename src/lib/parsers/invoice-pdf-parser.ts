@@ -3,7 +3,7 @@ import { InvoiceSummary } from './base-parser'
 
 /**
  * 請求書PDF専用パーサー
- * CSV業者（Daikichi、Otakaraya、EcoRing）の請求書PDFから総額を抽出
+ * CSV業者（Daikichi、Otakaraya、EcoRing）およびApre の請求書PDFから総額を抽出
  */
 export class InvoicePdfParser {
   /**
@@ -27,6 +27,8 @@ export class InvoicePdfParser {
         return this.extractOtakarayaInvoice(text)
       } else if (supplier.includes('ecoring') || supplier.includes('エコリング')) {
         return this.extractEcoringInvoice(text)
+      } else if (supplier.includes('apre') || supplier.includes('アプレ')) {
+        return this.extractApreInvoice(text)
       }
 
       return undefined
@@ -97,15 +99,20 @@ export class InvoicePdfParser {
    * パターン: "◎ご請求金額◎エコリングからのお支払額 ¥122,313"
    */
   private extractEcoringInvoice(text: string): InvoiceSummary | undefined {
-    // "ご請求金額" の後の金額を探す
+    console.log('EcoRing請求書テキスト（最初の500文字）:', text.substring(0, 500))
+    
+    // 改行を含む可能性があるため、sフラグを使用（.が改行にもマッチ）
     const patterns = [
-      /ご請求金額.*?¥\s*([\d,]+)/,
-      /エコリングからのお支払額.*?¥\s*([\d,]+)/,
+      /ご請求金額[\s\S]*?¥\s*([\d,]+)/,
+      /エコリングからのお支払額[\s\S]*?¥\s*([\d,]+)/,
+      /お支払額[\s\S]*?¥\s*([\d,]+)/,
+      /請求金額[\s\S]*?¥\s*([\d,]+)/,
     ]
 
     for (const pattern of patterns) {
       const match = text.match(pattern)
       if (match) {
+        console.log(`EcoRing請求額マッチ: パターン=${pattern.source}, 金額=${match[1]}`)
         const totalAmount = this.normalizePrice(match[1])
         return {
           totalAmount,
@@ -117,6 +124,56 @@ export class InvoicePdfParser {
       }
     }
 
+    console.warn('EcoRing請求額が見つかりませんでした')
+    return undefined
+  }
+
+  /**
+   * Apre請求書から総額を抽出
+   * パターン: "御請求金額 ¥609,952"
+   */
+  private extractApreInvoice(text: string): InvoiceSummary | undefined {
+    console.log('Apre請求書テキスト（最初の500文字）:', text.substring(0, 500))
+    
+    // パターン1: 最初に出現する¥金額（アプレオークション明細一覧の場合、最初の金額が御請求金額）
+    const firstAmountMatch = text.match(/¥\s*([\d,]+)/)
+    if (firstAmountMatch) {
+      const amount = this.normalizePrice(firstAmountMatch[1])
+      // 金額が妥当な範囲（1,000円以上）であることを確認
+      if (amount >= 1000) {
+        console.log(`Apre請求額マッチ（最初の金額）: ¥${amount.toLocaleString()}`)
+        return {
+          totalAmount: amount,
+          metadata: {
+            source: 'Apre請求書（最初の金額）',
+          },
+        }
+      }
+    }
+    
+    // パターン2: 「御請求金額」の後の金額を探す
+    const patterns = [
+      /御請求金額[\s\S]{0,200}¥\s*([\d,]+)/,  // 200文字以内で金額を探す
+      /ご請求金額[\s\S]{0,200}¥\s*([\d,]+)/,
+      /請求金額[\s\S]{0,200}¥\s*([\d,]+)/,
+    ]
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern)
+      if (match) {
+        console.log(`Apre請求額マッチ: パターン=${pattern.source}, 金額=${match[1]}`)
+        const totalAmount = this.normalizePrice(match[1])
+        return {
+          totalAmount,
+          metadata: {
+            source: 'Apre請求書',
+            pattern: pattern.source,
+          },
+        }
+      }
+    }
+
+    console.warn('Apre請求額が見つかりませんでした')
     return undefined
   }
 

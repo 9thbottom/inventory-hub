@@ -202,16 +202,48 @@ export class RevaAucParser extends BaseParser {
 
   /**
    * 請求書のサマリー情報を抽出
-   * RevaAucの精算書から合計金額を抽出
+   * RevaAucの精算書から振込金額を抽出
    */
   private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
     try {
-      // 「合計金額」を探す
-      // パターン: "合計金額 ¥XXX,XXX"
-      const totalMatch = text.match(/合計金額\s*¥([\d,]+)/)
+      // 「振込金額（税込）」を探す
+      // パターン1: 同じ行にある場合 "振込金額（税込）: ¥XXX,XXX"
+      let totalMatch = text.match(/振込金額[（(]税込[）)]\s*[:：]\s*¥([\d,]+)/)
       
       if (totalMatch) {
         const totalAmount = this.normalizePrice(totalMatch[1])
+        console.log(`RevaAuc PDF: 振込金額を抽出（同行） ¥${totalAmount.toLocaleString()}`)
+        
+        return {
+          totalAmount,
+          metadata: {
+            source: '振込金額（税込）',
+          },
+        }
+      }
+      
+      // パターン2: 改行で分かれている場合
+      // "振込金額（税込）：\n2026年01月27日\n¥1,208,911"
+      totalMatch = text.match(/振込金額[（(]税込[）)]\s*[:：]\s*[\r\n]+[^\n]*[\r\n]+\s*¥([\d,]+)/)
+      
+      if (totalMatch) {
+        const totalAmount = this.normalizePrice(totalMatch[1])
+        console.log(`RevaAuc PDF: 振込金額を抽出（改行） ¥${totalAmount.toLocaleString()}`)
+        
+        return {
+          totalAmount,
+          metadata: {
+            source: '振込金額（税込）',
+          },
+        }
+      }
+      
+      // フォールバック: 「合計金額」パターンも試す
+      totalMatch = text.match(/合計金額\s*[:：]?\s*¥([\d,]+)/)
+      
+      if (totalMatch) {
+        const totalAmount = this.normalizePrice(totalMatch[1])
+        console.log(`RevaAuc PDF: 合計金額を抽出 ¥${totalAmount.toLocaleString()}`)
         
         return {
           totalAmount,
@@ -221,7 +253,7 @@ export class RevaAucParser extends BaseParser {
         }
       }
       
-      console.warn('RevaAuc PDF: 合計金額が見つかりませんでした')
+      console.warn('RevaAuc PDF: 振込金額・合計金額が見つかりませんでした')
       return undefined
     } catch (error) {
       console.error('請求書サマリー抽出エラー:', error)
