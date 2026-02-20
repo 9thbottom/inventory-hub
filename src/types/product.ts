@@ -9,7 +9,9 @@ export interface Product {
   commission?: number
   status: string
   auctionName?: string
+  supplierId: string
   supplier: {
+    id: string
     name: string
     parserConfig?: {
       productPriceTaxType?: 'included' | 'excluded'

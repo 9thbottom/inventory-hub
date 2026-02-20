@@ -1,11 +1,11 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
-import { EditProductModal, EditAuctionFeesModal } from '@/components/edit-modals'
+import { EditProductModal, EditAuctionFeesModal, AddProductModal } from '@/components/edit-modals'
 import { Product, ImportLog, EditProductData, EditAuctionFeesData } from '@/types/product'
 
 interface GroupedProducts {
@@ -19,6 +19,7 @@ export default function ProductsPage() {
   const [importLogs, setImportLogs] = useState<Record<string, ImportLog>>({})
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [editingAuctionFees, setEditingAuctionFees] = useState<{ folderName: string; importLog: ImportLog; supplierConfig: any } | null>(null)
+  const [addingProduct, setAddingProduct] = useState<{ folderName: string; supplierId: string } | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -68,10 +69,16 @@ export default function ProductsPage() {
     setImportLogs(logs)
   }
 
-  // 商品データが読み込まれたらImportLogを取得
-  if (data?.products && Object.keys(importLogs).length === 0 && Object.keys(groupedProducts).length > 0) {
-    fetchImportLogs()
-  }
+  // 商品データが変更されたら、またはimportLogsが空になったらImportLogを再取得
+  useEffect(() => {
+    if (data?.products && Object.keys(groupedProducts).length > 0) {
+      // importLogsが空、または商品データが変更された場合に再取得
+      if (Object.keys(importLogs).length === 0) {
+        fetchImportLogs()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.products, Object.keys(groupedProducts).join(','), Object.keys(importLogs).length])
 
   const toggleFolder = (folderName: string) => {
     const newExpanded = new Set(expandedFolders)
@@ -117,7 +124,6 @@ export default function ProductsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       setEditingProduct(null)
-      setImportLogs({})
     },
   })
 
@@ -133,9 +139,48 @@ export default function ProductsPage() {
     },
     onSuccess: () => {
       setEditingAuctionFees(null)
-      setImportLogs({})
       // 商品データも再取得して画面を更新
       queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+
+  const deleteProductMutation = useMutation({
+    mutationFn: async (productId: string) => {
+      const res = await fetch(`/api/vehicles/${productId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('削除に失敗しました')
+      return res.json()
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['products'] })
+      // 少し待ってからImportLogをクリアして再取得をトリガー
+      setTimeout(() => {
+        setImportLogs({})
+      }, 100)
+    },
+  })
+
+  const addProductMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.error || '商品の追加に失敗しました')
+      }
+      return res.json()
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['products'] })
+      setAddingProduct(null)
+      // 少し待ってからImportLogをクリアして再取得をトリガー
+      setTimeout(() => {
+        setImportLogs({})
+      }, 100)
     },
   })
 
@@ -143,6 +188,16 @@ export default function ProductsPage() {
     if (window.confirm(`「${folderName}」の商品をすべて削除しますか？\nこの操作は取り消せません。`)) {
       deleteMutation.mutate(folderName)
     }
+  }
+
+  const handleDeleteProduct = (product: Product) => {
+    if (window.confirm(`商品「${product.name}」を削除しますか？\nこの操作は取り消せません。`)) {
+      deleteProductMutation.mutate(product.id)
+    }
+  }
+
+  const handleAddProduct = (folderName: string, supplierId: string) => {
+    setAddingProduct({ folderName, supplierId })
   }
 
   const handleEditProduct = (product: Product) => {
@@ -200,6 +255,23 @@ export default function ProductsPage() {
     }
 
     updateAuctionFeesMutation.mutate({ id: editingAuctionFees.importLog.id, data })
+  }
+
+  const handleSaveAddProduct = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!addingProduct) return
+
+    const formData = new FormData(e.currentTarget)
+    const data = {
+      productId: formData.get('productId') as string,
+      name: formData.get('name') as string,
+      purchasePrice: Number(formData.get('purchasePrice')),
+      commission: formData.get('commission') ? Number(formData.get('commission')) : 0,
+      supplierId: formData.get('supplierId') as string,
+      auctionName: formData.get('auctionName') as string,
+    }
+
+    addProductMutation.mutate(data)
   }
 
   if (status === 'loading') {
@@ -319,9 +391,23 @@ export default function ProductsPage() {
                   return sum + priceWithTax + commissionWithTax
                 }, 0)
                 
-                // ImportLogから最終請求額を取得
-                const finalInvoiceAmount = importLog?.systemAmount ? Number(importLog.systemAmount) : productTotal
-                const hasAmountMismatch = importLog?.hasAmountMismatch || false
+                // 参加費を税込に変換
+                const participationFeeWithTax = participationFeeTaxType === 'included'
+                  ? participationFee
+                  : Math.floor(participationFee * (1 + taxRate))
+                
+                // 送料を税込に変換
+                const shippingFeeWithTax = shippingFeeTaxType === 'included'
+                  ? shippingFee
+                  : Math.floor(shippingFee * (1 + taxRate))
+                
+                // 最終請求額を計算（常に最新の商品データから計算）
+                const finalInvoiceAmount = Math.floor(productTotal + participationFeeWithTax + shippingFeeWithTax)
+                
+                // PDF請求額との差額を計算
+                const hasAmountMismatch = importLog?.invoiceAmount
+                  ? Math.abs(Number(importLog.invoiceAmount) - finalInvoiceAmount) >= 1
+                  : false
 
                 return (
                   <div key={folderName} className="bg-white rounded-lg shadow overflow-hidden">
@@ -412,6 +498,12 @@ export default function ProductsPage() {
                         <div className="text-sm text-gray-500">
                           {products[0]?.supplier.name}
                         </div>
+                        <button
+                          onClick={() => handleAddProduct(folderName, products[0]?.supplierId)}
+                          className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                        >
+                          商品追加
+                        </button>
                         <button
                           onClick={() => handleDelete(folderName)}
                           disabled={deleteMutation.isPending}
@@ -513,12 +605,21 @@ export default function ProductsPage() {
                                       {new Date(product.createdAt).toLocaleDateString('ja-JP')}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                      <button
-                                        onClick={() => handleEditProduct(product)}
-                                        className="text-blue-600 hover:text-blue-800"
-                                      >
-                                        編集
-                                      </button>
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          onClick={() => handleEditProduct(product)}
+                                          className="text-blue-600 hover:text-blue-800"
+                                        >
+                                          編集
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteProduct(product)}
+                                          disabled={deleteProductMutation.isPending}
+                                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                                        >
+                                          削除
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 )
@@ -553,6 +654,16 @@ export default function ProductsPage() {
           onSave={handleSaveAuctionFees}
           onCancel={() => setEditingAuctionFees(null)}
           isLoading={updateAuctionFeesMutation.isPending}
+        />
+      )}
+
+      {addingProduct && (
+        <AddProductModal
+          folderName={addingProduct.folderName}
+          supplierId={addingProduct.supplierId}
+          onSave={handleSaveAddProduct}
+          onCancel={() => setAddingProduct(null)}
+          isLoading={addProductMutation.isPending}
         />
       )}
     </div>

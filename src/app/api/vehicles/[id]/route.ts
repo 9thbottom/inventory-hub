@@ -254,6 +254,9 @@ export async function DELETE(
     // 商品の存在確認
     const existing = await prisma.product.findUnique({
       where: { id },
+      include: {
+        supplier: true,
+      },
     })
 
     if (!existing) {
@@ -263,10 +266,111 @@ export async function DELETE(
       )
     }
 
+    // auctionNameを保存（削除後に使用）
+    const auctionName = existing.auctionName
+
     // 商品を削除
     await prisma.product.delete({
       where: { id },
     })
+
+    // 関連するImportLogのsystemAmountを再計算
+    if (auctionName) {
+      const importLog = await prisma.importLog.findFirst({
+        where: {
+          folderPath: {
+            endsWith: auctionName,
+          },
+        },
+      })
+
+      if (importLog) {
+        // 同じオークションの残りの商品を取得
+        const products = await prisma.product.findMany({
+          where: { auctionName },
+          include: {
+            supplier: true,
+          },
+        })
+
+        const supplier = existing.supplier
+        const supplierConfig = supplier.parserConfig as any
+        const taxRate = supplierConfig?.taxRate || 0.1
+
+        // 商品合計と手数料合計を計算
+        let productTotal = 0
+        let commissionTotal = 0
+
+        products.forEach((p: any) => {
+          productTotal += Number(p.purchasePrice)
+          commissionTotal += Number(p.commission || 0)
+        })
+
+        // 税込に変換
+        if (supplierConfig?.productPriceTaxType === 'excluded') {
+          productTotal *= (1 + taxRate)
+        }
+        if (supplierConfig?.commissionTaxType === 'excluded') {
+          commissionTotal *= (1 + taxRate)
+        }
+
+        // 参加費: ImportLogの値 → 業者設定の順で取得
+        let participationFeeAmount = 0
+        let participationFeeTax = 'included'
+
+        if (importLog.participationFee !== null) {
+          participationFeeAmount = Number(importLog.participationFee)
+          participationFeeTax = importLog.participationFeeTaxType || 'included'
+        } else if (supplierConfig?.participationFee) {
+          participationFeeAmount = supplierConfig.participationFee.amount
+          participationFeeTax = supplierConfig.participationFee.taxType
+        }
+
+        if (participationFeeTax === 'excluded') {
+          participationFeeAmount *= (1 + taxRate)
+        }
+
+        // 送料: ImportLogの値 → 業者設定の順で取得
+        let shippingFeeAmount = 0
+        let shippingFeeTax = 'included'
+
+        if (importLog.shippingFee !== null) {
+          shippingFeeAmount = Number(importLog.shippingFee)
+          shippingFeeTax = importLog.shippingFeeTaxType || 'included'
+        } else if (supplierConfig?.shippingFee) {
+          shippingFeeAmount = supplierConfig.shippingFee.amount
+          shippingFeeTax = supplierConfig.shippingFee.taxType
+        }
+
+        if (shippingFeeTax === 'excluded') {
+          shippingFeeAmount *= (1 + taxRate)
+        }
+
+        // システム計算額を更新
+        const systemAmount = Math.floor(productTotal + commissionTotal + participationFeeAmount + shippingFeeAmount)
+        
+        // 差額と不一致フラグを更新
+        let amountDifference: number | null = null
+        let hasAmountMismatch = false
+        
+        if (importLog.invoiceAmount !== null) {
+          amountDifference = Math.abs(Number(importLog.invoiceAmount) - systemAmount)
+          hasAmountMismatch = amountDifference >= 1
+        }
+
+        // ImportLogを更新（NaNチェック）
+        if (!isNaN(systemAmount) && isFinite(systemAmount)) {
+          await prisma.importLog.update({
+            where: { id: importLog.id },
+            data: {
+              systemAmount: new Decimal(systemAmount),
+              amountDifference: amountDifference !== null && !isNaN(amountDifference) ? new Decimal(amountDifference) : null,
+              hasAmountMismatch,
+            },
+          })
+        }
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

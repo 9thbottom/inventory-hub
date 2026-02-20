@@ -218,3 +218,102 @@ export function EditAuctionFeesModal({
     </div>
   )
 }
+
+interface AddProductModalProps {
+  folderName: string
+  supplierId: string
+  onSave: (e: React.FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+  isLoading: boolean
+}
+
+export function AddProductModal({
+  folderName,
+  supplierId,
+  onSave,
+  onCancel,
+  isLoading
+}: AddProductModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-semibold mb-4">{folderName} - 商品を追加</h3>
+        <form onSubmit={onSave}>
+          <input type="hidden" name="supplierId" value={supplierId} />
+          <input type="hidden" name="auctionName" value={folderName} />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                商品ID <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="productId"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+                placeholder="例: 1618-18"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                商品名 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="name"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+                placeholder="例: クリスチャンディオール ショルダー"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                商品単価 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="purchasePrice"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+                min="0"
+                step="1"
+                placeholder="例: 18000"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                買い手数料
+              </label>
+              <input
+                type="number"
+                name="commission"
+                defaultValue={0}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="0"
+                step="1"
+                placeholder="例: 2430"
+              />
+            </div>
+          </div>
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              disabled={isLoading}
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={isLoading}
+            >
+              {isLoading ? '追加中...' : '追加'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
