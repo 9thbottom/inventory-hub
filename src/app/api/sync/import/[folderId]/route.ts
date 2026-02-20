@@ -269,9 +269,6 @@ export async function POST(
           if (isOre && hasExtractedText) {
             console.log(`Ore: 抽出済みテキストを使用`)
             parseResult = await parser.parse(extractedTexts[pdfFile.id])
-            console.log(`🔍 [DEBUG] parseResult type: ${Array.isArray(parseResult) ? 'Array' : 'Object'}`)
-            console.log(`🔍 [DEBUG] parseResult keys:`, Object.keys(parseResult))
-            console.log(`🔍 [DEBUG] parseResult:`, JSON.stringify(parseResult, null, 2))
           } else if (isOre && !hasExtractedText) {
             console.warn(`Ore PDFですが、抽出済みテキストがありません。スキップします。`)
             continue
@@ -285,9 +282,6 @@ export async function POST(
           const products = Array.isArray(parseResult) ? parseResult : parseResult.products
           const invoiceSummary = Array.isArray(parseResult) ? undefined : parseResult.invoiceSummary
           
-          console.log(`🔍 [DEBUG] products type: ${Array.isArray(products) ? 'Array' : typeof products}`)
-          console.log(`🔍 [DEBUG] products length: ${products?.length || 'undefined'}`)
-          console.log(`🔍 [DEBUG] First product:`, products?.[0] ? JSON.stringify(products[0], null, 2) : 'No products')
           console.log(`${products.length}件の商品を抽出`)
           results.processed += products.length
 
@@ -300,9 +294,6 @@ export async function POST(
           // 商品データを保存
           for (const product of products) {
             try {
-              console.log(`🔍 [DEBUG] 保存処理開始: ${product.productId}`)
-              console.log(`🔍 [DEBUG] product data:`, JSON.stringify(product, null, 2))
-              
               // 重複チェック
               const existing = await prisma.product.findUnique({
                 where: { productId: product.productId },
@@ -324,7 +315,6 @@ export async function POST(
                     auctionName: folder.folderPath.split('/').pop() || folder.auctionName,
                   },
                 })
-                console.log(`✅ [DEBUG] 更新成功: ${product.productId}`)
               } else {
                 // 新規商品を作成
                 console.log(`新規作成: ${product.productId}`)
@@ -343,13 +333,11 @@ export async function POST(
                     status: 'in_stock',
                   },
                 })
-                console.log(`✅ [DEBUG] 新規作成成功: ${product.productId}`)
               }
 
               results.success++
             } catch (productError) {
-              console.error(`❌ [DEBUG] 商品保存エラー: ${product.productId}`, productError)
-              console.error(`❌ [DEBUG] エラー詳細:`, productError)
+              console.error(`商品保存エラー: ${product.productId}`, productError)
               results.failed++
               results.errors.push(`${product.productId}: ${String(productError)}`)
             }
