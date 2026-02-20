@@ -31,9 +31,6 @@ export async function POST(
     // リクエストボディから抽出済みテキストを取得（Ore PDF用）
     const body = await request.json().catch(() => ({}))
     const extractedTexts = body.extractedTexts || {}
-    console.log('=== 受信したextractedTexts ===')
-    console.log('Keys:', Object.keys(extractedTexts))
-    console.log('Count:', Object.keys(extractedTexts).length)
 
     // フォルダ情報を取得
     const folder = await prisma.driveFolder.findUnique({
@@ -119,6 +116,31 @@ export async function POST(
       )
 
       console.log(`処理対象: CSV ${csvFiles.length}件, 商品PDF ${productPdfFiles.length}件, 参照PDF ${referencePdfFiles.length}件`)
+
+      // Ore用: documentsテーブルにファイル情報を保存
+      const isOre = supplierName.toLowerCase().includes('ore') || supplierName.toLowerCase().includes('オーレ')
+      if (isOre) {
+        console.log('Ore: documentsテーブルにファイル情報を保存')
+        for (const file of [...productPdfFiles, ...referencePdfFiles]) {
+          await prisma.document.upsert({
+            where: {
+              driveFileId: file.id,
+            },
+            update: {
+              fileName: file.name,
+              fileType: file.mimeType.includes('pdf') ? 'pdf' : 'csv',
+            },
+            create: {
+              driveFileId: file.id,
+              fileName: file.name,
+              fileType: file.mimeType.includes('pdf') ? 'pdf' : 'csv',
+              filePath: `${folder.folderPath}/${file.name}`,
+              driveFolderId: folder.id,
+            },
+          })
+        }
+        console.log(`${productPdfFiles.length + referencePdfFiles.length}件のファイル情報を保存しました`)
+      }
 
       const supplier = await prisma.supplier.findFirst({
         where: {

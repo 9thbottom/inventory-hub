@@ -56,15 +56,8 @@ export default function ImportPage() {
       // Ore PDFの場合、クライアントサイドでテキストを抽出
       let extractedTexts: Record<string, string> = {}
       
-      console.log('=== Ore判定 ===')
-      console.log('auctionName:', folder.auctionName)
-      console.log('includes ore:', folder.auctionName.toLowerCase().includes('ore'))
-      console.log('includes オーレ:', folder.auctionName.toLowerCase().includes('オーレ'))
-      
       if (folder.auctionName.toLowerCase().includes('ore') || folder.auctionName.toLowerCase().includes('オーレ')) {
-        console.log('Ore PDFテキスト抽出を開始')
         extractedTexts = await extractOrePdfTexts(folderId)
-        console.log('抽出完了。Keys:', Object.keys(extractedTexts))
       }
 
       // サーバーにインポートリクエストを送信
@@ -93,16 +86,66 @@ export default function ImportPage() {
 
   /**
    * Ore PDFからクライアントサイドでテキストを抽出
-   *
-   * 注意: Oreの場合、documentsテーブルにレコードがないため、
-   * サーバーサイドでpdf-parseを使用してテキストを抽出します。
    */
   const extractOrePdfTexts = async (folderId: string): Promise<Record<string, string>> => {
     const extractedTexts: Record<string, string> = {}
     
-    console.log('⚠️ Ore PDFのクライアントサイド抽出は現在サポートされていません')
-    console.log('サーバーサイドでpdf-parseを使用してテキストを抽出します')
-    
+    try {
+      // pdfjs-distを動的にインポート
+      const pdfjsLib = await import('pdfjs-dist')
+      
+      // pdfjs-distのworker設定（ブラウザ用）
+      if (typeof window !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+      }
+      
+      // フォルダ内のファイル情報を取得
+      const folderRes = await fetch(`/api/sync/folders/${folderId}/files`)
+      if (!folderRes.ok) {
+        throw new Error('ファイル情報の取得に失敗しました')
+      }
+      
+      const files = await folderRes.json()
+      const pdfFiles = files.filter((f: any) =>
+        f.mimeType === 'application/pdf' && f.name.includes('Slip')
+      )
+
+      // 各PDFファイルを処理
+      for (const pdfFile of pdfFiles) {
+        try {
+          // Google DriveからPDFをダウンロード
+          const pdfRes = await fetch(`/api/sync/folders/${folderId}/files/${pdfFile.id}/download`)
+          if (!pdfRes.ok) continue
+
+          const arrayBuffer = await pdfRes.arrayBuffer()
+          
+          // pdfjs-distでテキストを抽出（CMap設定を追加）
+          const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
+            cMapPacked: true,
+          })
+          const pdfDocument = await loadingTask.promise
+          
+          let fullText = ''
+          for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+            const page = await pdfDocument.getPage(pageNum)
+            const textContent = await page.getTextContent()
+            const pageText = textContent.items.map((item: any) => item.str).join(' ')
+            fullText += pageText + '\n'
+          }
+
+          extractedTexts[pdfFile.id] = fullText
+          
+        } catch (error) {
+          console.error(`Ore PDF処理エラー: ${pdfFile.name}`, error)
+        }
+      }
+      
+    } catch (error) {
+      console.error('Ore PDF抽出エラー:', error)
+    }
+
     return extractedTexts
   }
 
