@@ -30,7 +30,10 @@ model ImportLog {
 - **ApreParser**: 落札明細PDFから「総計」を抽出
 - **OreParser**: 御精算書から「買い合計金額」を抽出
 - **RevaAucParser**: 精算書から「合計金額」を抽出
-- **CSVParser系**: 請求書情報なし（商品リストのみ）
+- **InvoicePdfParser**: CSV業者の請求書PDFから総額を抽出
+  - **Daikichi**: 「合計XXX円」または「ご請求金額 XXX円」
+  - **Otakaraya**: 「御請求金額 ￥XXX」
+  - **EcoRing**: 「ご請求金額...¥XXX」
 
 ### 3. 業者設定機能
 
@@ -115,6 +118,18 @@ if (税別設定) {
 ### 端数処理
 消費税計算の端数処理により、1円程度の差異が発生する可能性があります。現在は1円以上の差異を不一致としています。
 
+### ファイル構成
+各業者のファイル構成は以下の通りです：
+
+| 業者 | 商品リスト | 請求書 | 対応状況 |
+|------|-----------|--------|---------|
+| Daikichi | CSV | 別PDF | ✅ 対応済み |
+| Otakaraya | CSV | 別PDF | ✅ 対応済み |
+| EcoRing | CSV | 別PDF | ✅ 対応済み |
+| Apre | PDF（落札明細） | 別PDF（諸費用） | ✅ 対応済み |
+| Ore | PDF（1枚、2ページ目以降が商品リスト） | 同一PDF | ✅ 対応済み |
+| RevaAuc | PDF（1枚、2ページ目以降が商品リスト） | 同一PDF | ✅ 対応済み |
+
 ## 今後の拡張案
 
 1. **詳細な差異分析**
@@ -141,6 +156,7 @@ if (税別設定) {
 - `src/lib/parsers/apre-parser.ts`: Apreパーサー
 - `src/lib/parsers/ore-parser.ts`: Oreパーサー
 - `src/lib/parsers/revaauc-parser.ts`: RevaAucパーサー
+- `src/lib/parsers/invoice-pdf-parser.ts`: 請求書PDF専用パーサー（CSV業者用）
 - `src/app/api/sync/import/[folderId]/route.ts`: インポート処理
 - `src/app/api/suppliers/[id]/route.ts`: 業者設定API
 
@@ -148,3 +164,17 @@ if (税別設定) {
 - `src/app/suppliers/page.tsx`: 業者一覧
 - `src/app/suppliers/[id]/page.tsx`: 業者詳細・設定
 - `src/app/import/page.tsx`: インポート画面
+
+## 処理フロー
+
+### CSV業者（Daikichi、Otakaraya、EcoRing）
+1. CSVファイルから商品データを抽出
+2. 参照用PDFから請求書を判定（ファイル名に「請求」「invoice」「精算」を含む）
+3. InvoicePdfParserで請求書総額を抽出
+4. システム側で請求額を計算
+5. 請求書総額とシステム請求額を比較
+
+### PDF業者（Apre、Ore、RevaAuc）
+1. 商品PDFから商品データと請求書総額を同時に抽出
+2. システム側で請求額を計算
+3. 請求書総額とシステム請求額を比較
