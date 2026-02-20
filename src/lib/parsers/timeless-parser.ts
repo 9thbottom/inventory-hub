@@ -63,6 +63,7 @@ export class TimelessParser extends BaseParser {
           // CSVのカラム:
           // No, 商品番号, ブランド名, 商品名, 付属品, 備考, 金額(税抜), 金額(税込), 手数料(税抜), 手数料(税込)
           
+          const no = record['No'] || '' // No列を取得（並び順用）
           const productId = record['商品番号'] || ''
           const brand = record['ブランド名'] || ''
           const name = record['商品名'] || ''
@@ -86,6 +87,7 @@ export class TimelessParser extends BaseParser {
               commission: commissionIncludingTax, // 税込手数料を使用
               quantity: 1,
               metadata: {
+                no, // No列を保存（並び順用）
                 accessories,
                 remarks,
                 priceExcludingTax,
@@ -99,6 +101,13 @@ export class TimelessParser extends BaseParser {
           console.error('Timeless CSVレコードのパースエラー:', error, record)
         }
       }
+
+      // No順でソート（CSVの元の並び順を維持）
+      products.sort((a, b) => {
+        const noA = parseInt(a.metadata?.no || '0')
+        const noB = parseInt(b.metadata?.no || '0')
+        return noA - noB
+      })
 
       return {
         products,
@@ -148,6 +157,10 @@ export class TimelessParser extends BaseParser {
    */
   private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
     try {
+      console.log('=== Timeless PDF テキスト抽出結果（デバッグ） ===')
+      console.log(text)
+      console.log('=== デバッグ終了 ===')
+      
       const lines = text.split('\n')
       
       let subtotal = 0 // 仕入計
@@ -155,39 +168,81 @@ export class TimelessParser extends BaseParser {
       let participationFee = 0 // 参加費
       let totalAmount = 0 // 最終請求額
 
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
         const trimmedLine = line.trim()
 
-        // 仕入計 (税込)
-        const subtotalMatch = trimmedLine.match(/仕入計\s*\(税込\)\s*([\d,]+)/)
-        if (subtotalMatch) {
-          subtotal = this.normalizePrice(subtotalMatch[1])
-          console.log(`Timeless PDF: 仕入計=${subtotal}`)
+        // 仕入計 (税込) - 複数パターンに対応
+        if (trimmedLine.includes('仕入計') && trimmedLine.includes('税込')) {
+          // 同じ行に金額がある場合
+          const match1 = trimmedLine.match(/仕入計\s*\(税込\)\s*([\d,]+)/)
+          if (match1) {
+            subtotal = this.normalizePrice(match1[1])
+            console.log(`Timeless PDF: 仕入計=${subtotal} (同じ行)`)
+          } else if (i + 1 < lines.length) {
+            // 次の行に金額がある場合
+            const nextLine = lines[i + 1].trim()
+            const match2 = nextLine.match(/^([\d,]+)/)
+            if (match2) {
+              subtotal = this.normalizePrice(match2[1])
+              console.log(`Timeless PDF: 仕入計=${subtotal} (次の行)`)
+            }
+          }
         }
 
         // 仕入手数料計 (税込)
-        const commissionMatch = trimmedLine.match(/仕入手数料計\s*\(税込\)\s*([\d,]+)/)
-        if (commissionMatch) {
-          commission = this.normalizePrice(commissionMatch[1])
-          console.log(`Timeless PDF: 仕入手数料計=${commission}`)
+        if (trimmedLine.includes('仕入手数料計') && trimmedLine.includes('税込')) {
+          const match1 = trimmedLine.match(/仕入手数料計\s*\(税込\)\s*([\d,]+)/)
+          if (match1) {
+            commission = this.normalizePrice(match1[1])
+            console.log(`Timeless PDF: 仕入手数料計=${commission} (同じ行)`)
+          } else if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim()
+            const match2 = nextLine.match(/^([\d,]+)/)
+            if (match2) {
+              commission = this.normalizePrice(match2[1])
+              console.log(`Timeless PDF: 仕入手数料計=${commission} (次の行)`)
+            }
+          }
         }
 
         // 参加費 (税込)
-        const participationFeeMatch = trimmedLine.match(/参加費\s*\(税込\)\s*([\d,]+)/)
-        if (participationFeeMatch) {
-          participationFee = this.normalizePrice(participationFeeMatch[1])
-          console.log(`Timeless PDF: 参加費=${participationFee}`)
+        if (trimmedLine.includes('参加費') && trimmedLine.includes('税込')) {
+          const match1 = trimmedLine.match(/参加費\s*\(税込\)\s*([\d,]+)/)
+          if (match1) {
+            participationFee = this.normalizePrice(match1[1])
+            console.log(`Timeless PDF: 参加費=${participationFee} (同じ行)`)
+          } else if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim()
+            const match2 = nextLine.match(/^([\d,]+)/)
+            if (match2) {
+              participationFee = this.normalizePrice(match2[1])
+              console.log(`Timeless PDF: 参加費=${participationFee} (次の行)`)
+            }
+          }
         }
 
-        // 貴社お支払金額（最終請求額）
-        const totalMatch = trimmedLine.match(/貴社お支払金額\s*([\d,]+)/)
-        if (totalMatch) {
-          totalAmount = this.normalizePrice(totalMatch[1])
-          console.log(`Timeless PDF: 貴社お支払金額=${totalAmount}`)
+        // 貴社お支払金額（最終請求額）- 複数パターンに対応
+        if (trimmedLine.includes('貴社お支払金額')) {
+          // 同じ行に金額がある場合
+          const match1 = trimmedLine.match(/貴社お支払金額\s*([\d,]+)/)
+          if (match1) {
+            totalAmount = this.normalizePrice(match1[1])
+            console.log(`Timeless PDF: 貴社お支払金額=${totalAmount} (同じ行)`)
+          } else if (i + 1 < lines.length) {
+            // 次の行に金額がある場合
+            const nextLine = lines[i + 1].trim()
+            const match2 = nextLine.match(/^([\d,]+)/)
+            if (match2) {
+              totalAmount = this.normalizePrice(match2[1])
+              console.log(`Timeless PDF: 貴社お支払金額=${totalAmount} (次の行)`)
+            }
+          }
         }
       }
 
       if (totalAmount > 0) {
+        console.log(`Timeless PDF: 請求書サマリー抽出成功 - 総額=${totalAmount}`)
         return {
           totalAmount,
           subtotal: subtotal > 0 ? subtotal : undefined,
