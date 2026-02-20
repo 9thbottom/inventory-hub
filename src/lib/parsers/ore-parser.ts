@@ -15,7 +15,6 @@ export class OreParser extends BaseParser {
       // 文字列が渡された場合は、既に抽出済みのテキストとして扱う
       if (typeof fileBuffer === 'string') {
         text = fileBuffer
-        console.log('Ore Parser: クライアントから抽出済みテキストを受信')
       } else {
         // Bufferの場合は、サーバーサイドでの処理（現在は未対応）
         throw new Error('Ore PDFはクライアントサイドでテキスト抽出が必要です')
@@ -27,10 +26,6 @@ export class OreParser extends BaseParser {
 
       // 商品データを抽出
       const products = this.extractProducts(text)
-
-      if (products.length === 0) {
-        console.warn('Ore PDF: 商品データが見つかりませんでした')
-      }
 
       return products
     } catch (error) {
@@ -45,21 +40,14 @@ export class OreParser extends BaseParser {
   private extractProducts(text: string): ParsedProduct[] {
     const products: ParsedProduct[] = []
 
-    console.log('Ore PDF: 抽出されたテキスト長:', text.length)
-    console.log('Ore PDF: テキストの最初の500文字:', text.substring(0, 500))
-
     // 「【買い明細】」または「通番号」マーカーを探す
     let startIndex = text.indexOf('【買い明細】')
     if (startIndex === -1) {
       startIndex = text.indexOf('通番号')
       if (startIndex === -1) {
-        console.warn('Ore PDF: 開始マーカーが見つかりません')
-        console.log('Ore PDF: 全テキスト:', text)
         return products
       }
     }
-
-    console.log('Ore PDF: 開始マーカー位置:', startIndex)
 
     // 開始マーカー以降のテキストを取得
     const dataSection = text.substring(startIndex)
@@ -69,24 +57,19 @@ export class OreParser extends BaseParser {
     const endIndex = dataSection.indexOf(endMarker)
     const productSection = endIndex !== -1 ? dataSection.substring(0, endIndex) : dataSection
 
-    console.log('Ore PDF: 商品セクション長:', productSection.length)
-    console.log('Ore PDF: 商品セクションの最初の1000文字:', productSection.substring(0, 1000))
-
     // 商品行のパターン: "1618   18   ｸﾘｽﾁｬﾝﾃﾞｨｵｰﾙ ｼｮﾙﾀﾞｰ   -18,000   -2,430 -13.5%"
     // 通番号(4桁) 商品番号(1-2桁) 商品名 落札金額 手数料 料率
     const productPattern = /(\d{4})\s+(\d{1,2})\s+(.+?)\s+-\s*([\d,]+)\s+-\s*([\d,]+)\s+-13\.5%/g
 
     let match
-    let matchCount = 0
     while ((match = productPattern.exec(productSection)) !== null) {
-      matchCount++
       const serialNo = match[1]
       const productNo = match[2]
-      const name = match[3].trim()
+      const rawName = match[3].trim()
+      // 半角カタカナを全角カタカナに変換
+      const name = this.convertHalfWidthToFullWidth(rawName)
       const price = match[4]
       const commission = match[5]
-
-      console.log(`Ore PDF: マッチ${matchCount}:`, { serialNo, productNo, name, price, commission })
 
       const brand = this.extractBrand(name)
 
@@ -105,7 +88,6 @@ export class OreParser extends BaseParser {
       })
     }
 
-    console.log(`Ore PDF: ${products.length}件の商品を抽出`)
     return products
   }
 
@@ -147,5 +129,55 @@ export class OreParser extends BaseParser {
     ]
 
     return skipPatterns.some(pattern => line.includes(pattern))
+  }
+
+  /**
+   * 半角カタカナを全角カタカナに変換
+   */
+  private convertHalfWidthToFullWidth(str: string): string {
+    const halfWidthKana = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝｧｨｩｪｫｬｭｮｯｰﾞﾟ'
+    const fullWidthKana = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンァィゥェォャュョッー゛゜'
+    
+    let result = ''
+    for (let i = 0; i < str.length; i++) {
+      const char = str[i]
+      const index = halfWidthKana.indexOf(char)
+      
+      if (index !== -1) {
+        const fullChar = fullWidthKana[index]
+        
+        // 濁点・半濁点の処理
+        if (i + 1 < str.length) {
+          const nextChar = str[i + 1]
+          if (nextChar === 'ﾞ') {
+            // 濁点
+            const dakutenMap: { [key: string]: string } = {
+              'カ': 'ガ', 'キ': 'ギ', 'ク': 'グ', 'ケ': 'ゲ', 'コ': 'ゴ',
+              'サ': 'ザ', 'シ': 'ジ', 'ス': 'ズ', 'セ': 'ゼ', 'ソ': 'ゾ',
+              'タ': 'ダ', 'チ': 'ヂ', 'ツ': 'ヅ', 'テ': 'デ', 'ト': 'ド',
+              'ハ': 'バ', 'ヒ': 'ビ', 'フ': 'ブ', 'ヘ': 'ベ', 'ホ': 'ボ',
+              'ウ': 'ヴ'
+            }
+            result += dakutenMap[fullChar] || fullChar
+            i++ // 濁点をスキップ
+            continue
+          } else if (nextChar === 'ﾟ') {
+            // 半濁点
+            const handakutenMap: { [key: string]: string } = {
+              'ハ': 'パ', 'ヒ': 'ピ', 'フ': 'プ', 'ヘ': 'ペ', 'ホ': 'ポ'
+            }
+            result += handakutenMap[fullChar] || fullChar
+            i++ // 半濁点をスキップ
+            continue
+          }
+        }
+        
+        result += fullChar
+      } else {
+        result += char
+      }
+    }
+    
+    return result
   }
 }

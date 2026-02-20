@@ -214,18 +214,19 @@ export async function POST(
         try {
           console.log(`PDF処理中: ${pdfFile.name}`)
           
-          // ファイルをダウンロード
-          const buffer = await downloadFile(pdfFile.id)
-          
           // 業者名に応じた適切なパーサーを取得
           const parser = ParserFactory.getParser(pdfFile.mimeType, supplier.name)
           
           // Oreの場合、クライアントから抽出済みテキストを使用
           let products
-          if ((supplier.name.toLowerCase().includes('ore') || supplier.name.toLowerCase().includes('オーレ')) && extractedTexts[pdfFile.id]) {
-            console.log(`Ore PDF: クライアントから抽出済みテキストを使用 (${pdfFile.name})`)
+          const isOre = supplier.name.toLowerCase().includes('ore') || supplier.name.toLowerCase().includes('オーレ')
+          const hasExtractedText = extractedTexts[pdfFile.id]
+          
+          if (isOre && hasExtractedText) {
             products = await parser.parse(extractedTexts[pdfFile.id])
           } else {
+            // ファイルをダウンロード
+            const buffer = await downloadFile(pdfFile.id)
             products = await parser.parse(buffer)
           }
           

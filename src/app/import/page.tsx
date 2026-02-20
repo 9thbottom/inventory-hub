@@ -5,11 +5,12 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import * as pdfjsLib from 'pdfjs-dist'
 
 // pdfjs-distのworker設定（ブラウザ用）
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+  // publicディレクトリのworkerファイルを使用
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 }
 
 interface DriveFolder {
@@ -63,7 +64,6 @@ export default function ImportPage() {
       let extractedTexts: Record<string, string> = {}
       
       if (folder.auctionName.toLowerCase().includes('ore') || folder.auctionName.toLowerCase().includes('オーレ')) {
-        console.log('Ore PDFを検出: クライアントサイドでテキスト抽出を開始')
         extractedTexts = await extractOrePdfTexts(folderId)
       }
 
@@ -91,14 +91,14 @@ export default function ImportPage() {
     try {
       // フォルダ内のファイル情報を取得
       const folderRes = await fetch(`/api/sync/folders/${folderId}/files`)
-      if (!folderRes.ok) throw new Error('ファイル情報の取得に失敗しました')
+      if (!folderRes.ok) {
+        throw new Error('ファイル情報の取得に失敗しました')
+      }
       
       const files = await folderRes.json()
       const pdfFiles = files.filter((f: any) =>
         f.mimeType === 'application/pdf' && f.name.includes('Slip')
       )
-
-      console.log(`Ore PDF: ${pdfFiles.length}件のPDFを処理`)
 
       // 各PDFファイルを処理
       for (const pdfFile of pdfFiles) {
@@ -109,8 +109,12 @@ export default function ImportPage() {
 
           const arrayBuffer = await pdfRes.arrayBuffer()
           
-          // pdfjs-distでテキストを抽出
-          const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+          // pdfjs-distでテキストを抽出（CMap設定を追加）
+          const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
+            cMapPacked: true,
+          })
           const pdfDocument = await loadingTask.promise
           
           let fullText = ''
@@ -122,11 +126,12 @@ export default function ImportPage() {
           }
 
           extractedTexts[pdfFile.id] = fullText
-          console.log(`Ore PDF: ${pdfFile.name} のテキスト抽出完了 (${fullText.length}文字)`)
+          
         } catch (error) {
-          console.error(`Ore PDF: ${pdfFile.name} の処理エラー:`, error)
+          console.error(`Ore PDF処理エラー: ${pdfFile.name}`, error)
         }
       }
+      
     } catch (error) {
       console.error('Ore PDF抽出エラー:', error)
     }
