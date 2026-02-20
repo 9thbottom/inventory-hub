@@ -2,7 +2,11 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 
 // pdfjs-distのworkerを無効化（Next.jsのサーバーサイドで動作させるため）
-pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+// workerSrcにダミーのパスを設定してworkerの初期化をスキップ
+if (typeof window === 'undefined') {
+  // サーバーサイドの場合のみ設定
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'fake-worker-path'
+}
 
 /**
  * Ore（日本時計オークション）専用パーサー
@@ -42,12 +46,16 @@ export class OreParser extends BaseParser {
    */
   private async extractTextWithPdfjs(fileBuffer: Buffer): Promise<string> {
     try {
-      // PDFドキュメントを読み込む（workerなし）
+      // PDFドキュメントを読み込む（workerを完全に無効化）
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(fileBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
+        disableAutoFetch: true,
+        disableStream: true,
+        // workerを使用しない
+        worker: null as any,
       })
       
       const pdfDocument = await loadingTask.promise
