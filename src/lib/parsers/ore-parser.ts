@@ -193,22 +193,38 @@ export class OreParser extends BaseParser {
    */
   private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
     try {
-      // 「買い合計金額」を探す
-      // パターン: "買い合計金額 -XXX,XXX"
-      const totalMatch = text.match(/買い合計金額\s+-\s*([\d,]+)/)
+      // 「精算金額（税込）」を探す（最優先）
+      // パターン: "精算金額（税込） ¥ - 564,800" または "精算金額 (税込) ¥ -564,800"
+      let totalMatch = text.match(/精算金額[（(]税込[）)]\s*¥?\s*-?\s*([\d,]+)/)
+      let source = '精算金額（税込）'
+      
+      // 見つからない場合は「合計」を探す
+      if (!totalMatch) {
+        totalMatch = text.match(/合計\s+-?\s*([\d,]+)/)
+        source = '合計'
+      }
+      
+      // それでも見つからない場合は「買い合計金額」を探す
+      if (!totalMatch) {
+        totalMatch = text.match(/買い合計金額\s+-\s*([\d,]+)/)
+        source = '買い合計金額'
+      }
       
       if (totalMatch) {
         const totalAmount = this.normalizePrice(totalMatch[1])
         
+        console.log(`Ore PDF: ${source}を抽出 = ¥${totalAmount.toLocaleString()}`)
+        
         return {
           totalAmount,
           metadata: {
-            source: '買い合計金額',
+            source,
           },
         }
       }
       
-      console.warn('Ore PDF: 買い合計金額が見つかりませんでした')
+      console.warn('Ore PDF: 請求額が見つかりませんでした')
+      console.warn('テキストサンプル:', text.substring(0, 500))
       return undefined
     } catch (error) {
       console.error('請求書サマリー抽出エラー:', error)
