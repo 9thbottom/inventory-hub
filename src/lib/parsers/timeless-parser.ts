@@ -103,13 +103,6 @@ export class TimelessParser extends BaseParser {
         }
       }
 
-      // No順でソート（CSVの元の並び順を維持）
-      products.sort((a, b) => {
-        const noA = parseInt(a.metadata?.no || '0')
-        const noB = parseInt(b.metadata?.no || '0')
-        return noA - noB
-      })
-
       return {
         products,
       }
@@ -158,10 +151,6 @@ export class TimelessParser extends BaseParser {
    */
   private extractInvoiceSummary(text: string): InvoiceSummary | undefined {
     try {
-      console.log('=== Timeless PDF テキスト抽出結果（デバッグ） ===')
-      console.log(text)
-      console.log('=== デバッグ終了 ===')
-      
       const lines = text.split('\n')
       
       let subtotal = 0 // 仕入計
