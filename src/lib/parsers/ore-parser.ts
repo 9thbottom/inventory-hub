@@ -1,5 +1,4 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
-import path from 'path'
+import pdf from 'pdf-parse'
 import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
 
 /**
@@ -14,8 +13,9 @@ export class OreParser extends BaseParser {
         throw new Error('PDFファイルが空です')
       }
 
-      // pdfjs-distを使用してPDFからテキストを抽出
-      const text = await this.extractTextWithPdfjs(fileBuffer)
+      // PDFからテキストを抽出
+      const data = await pdf(fileBuffer)
+      const text = data.text
 
       if (!text || text.trim().length === 0) {
         throw new Error('PDFからテキストを抽出できませんでした')
@@ -36,77 +36,53 @@ export class OreParser extends BaseParser {
   }
 
   /**
-   * pdfjs-distを使用してPDFからテキストを抽出
-   */
-  private async extractTextWithPdfjs(fileBuffer: Buffer): Promise<string> {
-    try {
-      // CMapの設定（日本語フォント対応）
-      const cMapUrl = path.join(process.cwd(), 'node_modules/pdfjs-dist/cmaps/')
-      
-      // PDFドキュメントを読み込む
-      const loadingTask = pdfjsLib.getDocument({
-        data: new Uint8Array(fileBuffer),
-        useSystemFonts: true,
-        cMapUrl: cMapUrl,
-        cMapPacked: true,
-      })
-      
-      const pdfDocument = await loadingTask.promise
-      let fullText = ''
-      
-      // 全ページのテキストを抽出
-      for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-        const page = await pdfDocument.getPage(pageNum)
-        const textContent = await page.getTextContent()
-        
-        // テキストアイテムを結合
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(' ')
-        
-        fullText += pageText + '\n'
-      }
-      
-      return fullText
-    } catch (error) {
-      console.error('pdfjs-distでのテキスト抽出エラー:', error)
-      throw error
-    }
-  }
-
-  /**
    * PDFテキストから商品情報を抽出
    */
   private extractProducts(text: string): ParsedProduct[] {
     const products: ParsedProduct[] = []
 
-    // 「【買い明細】」の後から商品データが始まる
-    const startMarker = '【買い明細】'
-    const startIndex = text.indexOf(startMarker)
+    console.log('Ore PDF: 抽出されたテキスト長:', text.length)
+    console.log('Ore PDF: テキストの最初の500文字:', text.substring(0, 500))
+
+    // 「【買い明細】」または「通番号」マーカーを探す
+    let startIndex = text.indexOf('【買い明細】')
     if (startIndex === -1) {
-      console.warn('Ore PDF: 開始マーカー「【買い明細】」が見つかりません')
-      return products
+      startIndex = text.indexOf('通番号')
+      if (startIndex === -1) {
+        console.warn('Ore PDF: 開始マーカーが見つかりません')
+        console.log('Ore PDF: 全テキスト:', text)
+        return products
+      }
     }
 
+    console.log('Ore PDF: 開始マーカー位置:', startIndex)
+
     // 開始マーカー以降のテキストを取得
-    const dataSection = text.substring(startIndex + startMarker.length)
+    const dataSection = text.substring(startIndex)
     
     // 終了マーカーまでのテキストを取得
     const endMarker = '買い合計件数'
     const endIndex = dataSection.indexOf(endMarker)
     const productSection = endIndex !== -1 ? dataSection.substring(0, endIndex) : dataSection
 
+    console.log('Ore PDF: 商品セクション長:', productSection.length)
+    console.log('Ore PDF: 商品セクションの最初の1000文字:', productSection.substring(0, 1000))
+
     // 商品行のパターン: "1618   18   ｸﾘｽﾁｬﾝﾃﾞｨｵｰﾙ ｼｮﾙﾀﾞｰ   -18,000   -2,430 -13.5%"
     // 通番号(4桁) 商品番号(1-2桁) 商品名 落札金額 手数料 料率
     const productPattern = /(\d{4})\s+(\d{1,2})\s+(.+?)\s+-\s*([\d,]+)\s+-\s*([\d,]+)\s+-13\.5%/g
 
     let match
+    let matchCount = 0
     while ((match = productPattern.exec(productSection)) !== null) {
+      matchCount++
       const serialNo = match[1]
       const productNo = match[2]
       const name = match[3].trim()
       const price = match[4]
       const commission = match[5]
+
+      console.log(`Ore PDF: マッチ${matchCount}:`, { serialNo, productNo, name, price, commission })
 
       const brand = this.extractBrand(name)
 
@@ -125,7 +101,7 @@ export class OreParser extends BaseParser {
       })
     }
 
-    console.log(`${products.length}件の商品を抽出`)
+    console.log(`Ore PDF: ${products.length}件の商品を抽出`)
     return products
   }
 
