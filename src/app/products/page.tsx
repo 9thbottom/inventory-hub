@@ -19,6 +19,11 @@ interface Product {
   auctionName?: string
   supplier: {
     name: string
+    parserConfig?: {
+      productPriceTaxType?: 'included' | 'excluded'
+      commissionTaxType?: 'included' | 'excluded'
+      taxRate?: number
+    }
   }
   createdAt: string
 }
@@ -202,13 +207,28 @@ export default function ProductsPage() {
               .sort(([a], [b]) => b.localeCompare(a)) // 新しい順にソート
               .map(([folderName, products]) => {
                 const isExpanded = expandedFolders.has(folderName)
-                // 商品合計（税込）: 全商品の小計を合計してから消費税を計算
-                const subtotalSum = products.reduce((sum, p) => {
+                
+                // 業者の税設定を取得
+                const supplierConfig = products[0]?.supplier?.parserConfig
+                const productPriceTaxType = supplierConfig?.productPriceTaxType || 'excluded'
+                const commissionTaxType = supplierConfig?.commissionTaxType || 'excluded'
+                const taxRate = supplierConfig?.taxRate || 0.1
+                
+                // 商品合計を計算（業者の税設定に基づく）
+                const productTotal = products.reduce((sum, p) => {
                   const purchasePrice = Number(p.purchasePrice)
                   const commission = Number(p.commission || 0)
-                  return sum + purchasePrice + commission
+                  
+                  // 税込の場合はそのまま、税別の場合は税を加算
+                  const priceWithTax = productPriceTaxType === 'included'
+                    ? purchasePrice
+                    : Math.floor(purchasePrice * (1 + taxRate))
+                  const commissionWithTax = commissionTaxType === 'included'
+                    ? commission
+                    : Math.floor(commission * (1 + taxRate))
+                  
+                  return sum + priceWithTax + commissionWithTax
                 }, 0)
-                const productTotal = subtotalSum + Math.floor(subtotalSum * 0.1)
                 
                 // ImportLogから最終請求額を取得
                 const importLog = importLogs[folderName]
@@ -294,10 +314,10 @@ export default function ProductsPage() {
                                   商品名
                                 </th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  商品単価（税別）
+                                  商品単価（{productPriceTaxType === 'included' ? '税込' : '税別'}）
                                 </th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                  買い手数料（税別）
+                                  買い手数料（{commissionTaxType === 'included' ? '税込' : '税別'}）
                                 </th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                   合計金額（税込）
@@ -314,8 +334,15 @@ export default function ProductsPage() {
                               {products.map((product: Product) => {
                                 const purchasePrice = Number(product.purchasePrice)
                                 const commission = Number(product.commission || 0)
-                                const subtotal = purchasePrice + commission
-                                const totalWithTax = Math.floor(subtotal * 1.1)
+                                
+                                // 業者の税設定に基づいて合計を計算
+                                const priceWithTax = productPriceTaxType === 'included'
+                                  ? purchasePrice
+                                  : Math.floor(purchasePrice * (1 + taxRate))
+                                const commissionWithTax = commissionTaxType === 'included'
+                                  ? commission
+                                  : Math.floor(commission * (1 + taxRate))
+                                const totalWithTax = priceWithTax + commissionWithTax
                                 
                                 return (
                                   <tr key={product.id} className="hover:bg-gray-50">
