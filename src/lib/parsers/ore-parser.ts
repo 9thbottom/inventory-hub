@@ -1,5 +1,8 @@
-import pdf from 'pdf-parse'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { BaseParser, ParserConfig, ParsedProduct } from './base-parser'
+
+// pdfjs-distのworkerを無効化（Next.jsのサーバーサイドで動作させるため）
+pdfjsLib.GlobalWorkerOptions.workerSrc = ''
 
 /**
  * Ore（日本時計オークション）専用パーサー
@@ -13,9 +16,8 @@ export class OreParser extends BaseParser {
         throw new Error('PDFファイルが空です')
       }
 
-      // PDFからテキストを抽出
-      const data = await pdf(fileBuffer)
-      const text = data.text
+      // pdfjs-distを使用してPDFからテキストを抽出
+      const text = await this.extractTextWithPdfjs(fileBuffer)
 
       if (!text || text.trim().length === 0) {
         throw new Error('PDFからテキストを抽出できませんでした')
@@ -32,6 +34,42 @@ export class OreParser extends BaseParser {
     } catch (error) {
       console.error('Ore PDFパースエラー:', error)
       throw new Error(`Ore PDFファイルの解析に失敗しました: ${error}`)
+    }
+  }
+
+  /**
+   * pdfjs-distを使用してPDFからテキストを抽出（workerなし）
+   */
+  private async extractTextWithPdfjs(fileBuffer: Buffer): Promise<string> {
+    try {
+      // PDFドキュメントを読み込む（workerなし）
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(fileBuffer),
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+      })
+      
+      const pdfDocument = await loadingTask.promise
+      let fullText = ''
+      
+      // 全ページのテキストを抽出
+      for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+        const page = await pdfDocument.getPage(pageNum)
+        const textContent = await page.getTextContent()
+        
+        // テキストアイテムを結合
+        const pageText = textContent.items
+          .map((item: any) => item.str)
+          .join(' ')
+        
+        fullText += pageText + '\n'
+      }
+      
+      return fullText
+    } catch (error) {
+      console.error('pdfjs-distでのテキスト抽出エラー:', error)
+      throw error
     }
   }
 
