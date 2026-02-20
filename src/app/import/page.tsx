@@ -2,16 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
-import * as pdfjsLib from 'pdfjs-dist'
-
-// pdfjs-distのworker設定（ブラウザ用）
-if (typeof window !== 'undefined') {
-  // publicディレクトリのworkerファイルを使用
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-}
 
 interface DriveFolder {
   id: string
@@ -89,6 +82,14 @@ export default function ImportPage() {
     const extractedTexts: Record<string, string> = {}
     
     try {
+      // pdfjs-distを動的にインポート
+      const pdfjsLib = await import('pdfjs-dist')
+      
+      // pdfjs-distのworker設定（ブラウザ用）
+      if (typeof window !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+      }
+      
       // フォルダ内のファイル情報を取得
       const folderRes = await fetch(`/api/sync/folders/${folderId}/files`)
       if (!folderRes.ok) {

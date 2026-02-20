@@ -8,7 +8,7 @@ import { getDriveClient } from '@/lib/google-drive'
  */
 export async function GET(
   request: Request,
-  { params }: { params: { folderId: string; fileId: string } }
+  { params }: { params: Promise<{ folderId: string; fileId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
