@@ -4,7 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { downloadFile, listFiles } from '@/lib/google-drive'
 import { ParserFactory } from '@/lib/parsers/parser-factory'
 import { prisma } from '@/lib/prisma'
-import { ParseResult, SupplierConfig } from '@/lib/parsers/base-parser'
+import { ParseResult, SupplierConfig, calculateInvoiceAmount } from '@/lib/parsers/base-parser'
 import { Decimal } from '@prisma/client/runtime/library'
 import { InvoicePdfParser } from '@/lib/parsers/invoice-pdf-parser'
 
@@ -476,87 +476,68 @@ export async function POST(
           },
         })
 
-        // システム側で請求額を計算
-        let productTotal = 0
-        let commissionTotal = 0
-
-        for (const product of importedProducts) {
-          productTotal += Number(product.purchasePrice)
-          commissionTotal += Number(product.commission || 0)
-        }
-
-        console.log(`=== 計算開始 ===`)
-        console.log(`商品合計（税別）: ¥${productTotal.toLocaleString()}`)
-        console.log(`手数料合計（税別）: ¥${commissionTotal.toLocaleString()}`)
-
-        // 税込計算（個別に丸めず、合計してから丸める）
-        if (supplierConfig.productPriceTaxType === 'excluded') {
-          productTotal *= (1 + taxRate)
-        }
-        if (supplierConfig.commissionTaxType === 'excluded') {
-          commissionTotal *= (1 + taxRate)
-        }
-        console.log(`商品合計（税込）: ¥${productTotal.toLocaleString()}`)
-        console.log(`手数料合計（税込）: ¥${commissionTotal.toLocaleString()}`)
-
         // 参加費: ImportLogの値 → 業者設定の順で取得
         let participationFee = 0
-        let participationFeeTaxType = 'included'
+        let participationFeeTaxType: 'included' | 'excluded' = 'included'
         
         if (importLog.participationFee !== null && importLog.participationFee !== undefined) {
-          // ImportLogに設定がある場合は優先
           const fee = Number(importLog.participationFee)
           if (!isNaN(fee)) {
             participationFee = fee
-            participationFeeTaxType = importLog.participationFeeTaxType || 'included'
+            participationFeeTaxType = (importLog.participationFeeTaxType as 'included' | 'excluded') || 'included'
             console.log(`参加費設定: ImportLog優先 ¥${participationFee} (${participationFeeTaxType})`)
           }
         } else if (supplierConfig.participationFee) {
-          // 業者設定をフォールバック
           participationFee = supplierConfig.participationFee.amount || 0
           participationFeeTaxType = supplierConfig.participationFee.taxType || 'included'
           console.log(`参加費設定: 業者設定 ${JSON.stringify(supplierConfig.participationFee)}`)
         } else {
           console.log(`参加費設定: なし`)
         }
-        
-        if (participationFeeTaxType === 'excluded') {
-          participationFee *= (1 + taxRate)
-        }
-        console.log(`参加費（税込）: ¥${participationFee.toLocaleString()}`)
 
         // 送料: ImportLogの値 → 業者設定の順で取得
         let shippingFee = 0
-        let shippingFeeTaxType = 'included'
+        let shippingFeeTaxType: 'included' | 'excluded' = 'included'
         
         if (importLog.shippingFee !== null && importLog.shippingFee !== undefined) {
-          // ImportLogに設定がある場合は優先
           const fee = Number(importLog.shippingFee)
           if (!isNaN(fee)) {
             shippingFee = fee
-            shippingFeeTaxType = importLog.shippingFeeTaxType || 'included'
+            shippingFeeTaxType = (importLog.shippingFeeTaxType as 'included' | 'excluded') || 'included'
             console.log(`送料設定: ImportLog優先 ¥${shippingFee} (${shippingFeeTaxType})`)
           }
         } else if (supplierConfig.shippingFee) {
-          // 業者設定をフォールバック
           shippingFee = supplierConfig.shippingFee.amount || 0
           shippingFeeTaxType = supplierConfig.shippingFee.taxType || 'included'
           console.log(`送料設定: 業者設定 ${JSON.stringify(supplierConfig.shippingFee)}`)
         } else {
           console.log(`送料設定: なし`)
         }
-        
-        if (shippingFeeTaxType === 'excluded') {
-          shippingFee *= (1 + taxRate)
-        }
-        console.log(`送料（税込）: ¥${shippingFee.toLocaleString()}`)
 
-        // 合計してから切り捨て（端数処理は最後に1回だけ）
-        const systemAmount = Math.floor(productTotal + commissionTotal + participationFee + shippingFee)
+        // 共通計算関数を使用してシステム請求額を計算
+        const productsForCalculation = importedProducts.map((p: any) => ({
+          purchasePrice: Number(p.purchasePrice),
+          commission: Number(p.commission || 0)
+        }))
+
+        console.log(`=== 計算開始 ===`)
+        console.log(`商品数: ${productsForCalculation.length}`)
+        console.log(`参加費: ¥${participationFee.toLocaleString()} (${participationFeeTaxType})`)
+        console.log(`送料: ¥${shippingFee.toLocaleString()} (${shippingFeeTaxType})`)
+        console.log(`丸め設定: ${JSON.stringify(supplierConfig.roundingConfig || { calculationType: 'total', roundingMode: 'floor' })}`)
+
+        const systemAmount = calculateInvoiceAmount(
+          productsForCalculation,
+          supplierConfig,
+          participationFee,
+          participationFeeTaxType,
+          shippingFee,
+          shippingFeeTaxType
+        )
         results.systemAmount = systemAmount
         
         console.log(`=== システム計算額 ===`)
-        console.log(`合計: ¥${systemAmount.toLocaleString()} = 商品¥${Math.round(productTotal).toLocaleString()} + 手数料¥${Math.round(commissionTotal).toLocaleString()} + 参加費¥${Math.round(participationFee).toLocaleString()} + 送料¥${Math.round(shippingFee).toLocaleString()}`)
+        console.log(`合計: ¥${systemAmount.toLocaleString()}`)
 
         // 請求書総額が取得できた場合のみ比較
         if (results.invoiceAmount !== null) {

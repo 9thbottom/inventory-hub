@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react'
 import { AuthButton } from '@/components/auth-button'
 import { EditProductModal, EditAuctionFeesModal, AddProductModal } from '@/components/edit-modals'
 import { Product, ImportLog, EditProductData, EditAuctionFeesData } from '@/types/product'
+import { calculateInvoiceAmount } from '@/lib/parsers/base-parser'
 
 interface GroupedProducts {
   [auctionName: string]: Product[]
@@ -362,10 +363,10 @@ export default function ProductsPage() {
                 
                 // 参加費: ImportLogの値 → 業者設定の順で取得
                 let participationFee = 0
-                let participationFeeTaxType = 'included'
+                let participationFeeTaxType: 'included' | 'excluded' = 'included'
                 if (importLog?.participationFee !== null && importLog?.participationFee !== undefined) {
                   participationFee = Number(importLog.participationFee)
-                  participationFeeTaxType = importLog.participationFeeTaxType || 'included'
+                  participationFeeTaxType = (importLog.participationFeeTaxType as 'included' | 'excluded') || 'included'
                 } else if (supplierConfig?.participationFee) {
                   participationFee = supplierConfig.participationFee.amount
                   participationFeeTaxType = supplierConfig.participationFee.taxType
@@ -373,43 +374,37 @@ export default function ProductsPage() {
                 
                 // 送料: ImportLogの値 → 業者設定の順で取得
                 let shippingFee = 0
-                let shippingFeeTaxType = 'included'
+                let shippingFeeTaxType: 'included' | 'excluded' = 'included'
                 if (importLog?.shippingFee !== null && importLog?.shippingFee !== undefined) {
                   shippingFee = Number(importLog.shippingFee)
-                  shippingFeeTaxType = importLog.shippingFeeTaxType || 'included'
+                  shippingFeeTaxType = (importLog.shippingFeeTaxType as 'included' | 'excluded') || 'included'
                 } else if (supplierConfig?.shippingFee) {
                   shippingFee = supplierConfig.shippingFee.amount
                   shippingFeeTaxType = supplierConfig.shippingFee.taxType
                 }
                 
-                // 商品合計を計算（業者の税設定に基づく）
-                const productTotal = sortedProducts.reduce((sum, p) => {
-                  const purchasePrice = Number(p.purchasePrice)
-                  const commission = Number(p.commission || 0)
-                  
-                  // 税込の場合はそのまま、税別の場合は税を加算
-                  const priceWithTax = productPriceTaxType === 'included'
-                    ? purchasePrice
-                    : Math.floor(purchasePrice * (1 + taxRate))
-                  const commissionWithTax = commissionTaxType === 'included'
-                    ? commission
-                    : Math.floor(commission * (1 + taxRate))
-                  
-                  return sum + priceWithTax + commissionWithTax
-                }, 0)
-                
-                // 参加費を税込に変換
-                const participationFeeWithTax = participationFeeTaxType === 'included'
-                  ? participationFee
-                  : Math.floor(participationFee * (1 + taxRate))
-                
-                // 送料を税込に変換
-                const shippingFeeWithTax = shippingFeeTaxType === 'included'
-                  ? shippingFee
-                  : Math.floor(shippingFee * (1 + taxRate))
-                
-                // 最終請求額を計算（常に最新の商品データから計算）
-                const finalInvoiceAmount = Math.floor(productTotal + participationFeeWithTax + shippingFeeWithTax)
+                // 共通計算関数を使用して最終請求額を計算
+                const productsForCalculation = sortedProducts.map(p => ({
+                  purchasePrice: Number(p.purchasePrice),
+                  commission: Number(p.commission || 0)
+                }))
+
+                // 商品合計を計算（表示用）
+                const productTotal = productsForCalculation.reduce((sum, p) =>
+                  sum + p.purchasePrice + p.commission, 0
+                )
+
+                const finalInvoiceAmount = (supplierConfig &&
+                  supplierConfig.productPriceTaxType &&
+                  supplierConfig.commissionTaxType &&
+                  supplierConfig.taxRate !== undefined) ? calculateInvoiceAmount(
+                  productsForCalculation,
+                  supplierConfig as any,
+                  participationFee,
+                  participationFeeTaxType,
+                  shippingFee,
+                  shippingFeeTaxType
+                ) : 0
                 
                 // PDF請求額との差額を計算
                 const hasAmountMismatch = importLog?.invoiceAmount
